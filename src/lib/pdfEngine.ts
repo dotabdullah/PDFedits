@@ -5,10 +5,10 @@ import type { EditorElement, ExistingTextItem, PageSize } from "./types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-const FONT_MAP: Record<string, keyof typeof StandardFonts> = {
-  sans: "Helvetica",
-  serif: "TimesRoman",
-  mono: "Courier",
+const FONT_VARIANTS: Record<"sans" | "serif" | "mono", { normal: keyof typeof StandardFonts; bold: keyof typeof StandardFonts; italic: keyof typeof StandardFonts; boldItalic: keyof typeof StandardFonts }> = {
+  sans: { normal: "Helvetica", bold: "HelveticaBold", italic: "HelveticaOblique", boldItalic: "HelveticaBoldOblique" },
+  serif: { normal: "TimesRoman", bold: "TimesRomanBold", italic: "TimesRomanItalic", boldItalic: "TimesRomanBoldItalic" },
+  mono: { normal: "Courier", bold: "CourierBold", italic: "CourierOblique", boldItalic: "CourierBoldOblique" },
 };
 
 export async function loadPdfDocument(bytes: Uint8Array) {
@@ -55,8 +55,9 @@ export async function flattenToPdf(
   const pages = pdfDoc.getPages();
   const fontCache = new Map<string, PDFFont>();
 
-  const getFont = async (family: string) => {
-    const key = FONT_MAP[family] ?? "Helvetica";
+  const getFont = async (family: "sans" | "serif" | "mono", bold: boolean, italic: boolean) => {
+    const variant = FONT_VARIANTS[family] ?? FONT_VARIANTS.sans;
+    const key = bold && italic ? variant.boldItalic : bold ? variant.bold : italic ? variant.italic : variant.normal;
     if (!fontCache.has(key)) {
       fontCache.set(key, await pdfDoc.embedFont(StandardFonts[key]));
     }
@@ -81,7 +82,7 @@ export async function flattenToPdf(
         color: rgb(...hexToRgb(el.color)),
       });
     } else if (el.kind === "text") {
-      const font = await getFont(el.fontFamily);
+      const font = await getFont(el.fontFamily, !!el.bold, !!el.italic);
       page.drawText(el.content, {
         x: toPdfX(el.x),
         y: toPdfY(el.y, el.fontSize) + el.fontSize * 0.15,
@@ -134,6 +135,7 @@ export async function extractTextItems(
     const y = tx[5] - fontHeight;
 
     const style = textContent.styles[item.fontName];
+    const styleSignature = `${item.fontName} ${style?.fontFamily ?? ""}`;
     items.push({
       id: `pg${pageIndex}-t${idx}`,
       page: pageIndex,
@@ -143,7 +145,9 @@ export async function extractTextItems(
       height: fontHeight,
       text: item.str,
       fontSize: fontHeight,
-      fontFamily: guessFontFamily(style?.fontFamily ?? ""),
+      fontFamily: guessFontFamily(styleSignature),
+      bold: guessBold(styleSignature),
+      italic: guessItalic(styleSignature),
     });
   });
 
@@ -152,9 +156,23 @@ export async function extractTextItems(
 
 function guessFontFamily(name: string): "sans" | "serif" | "mono" {
   const n = name.toLowerCase();
-  if (n.includes("times") || n.includes("serif") || n.includes("georgia") || n.includes("minion")) return "serif";
+  if (n.includes("times") || n.includes("serif") || n.includes("georgia") || n.includes("minion") || n.includes("garamond") || n.includes("cambria")) return "serif";
   if (n.includes("courier") || n.includes("mono") || n.includes("consolas")) return "mono";
   return "sans";
+}
+
+// pdf.js's `item.fontName` is an internal id ("g_d0_f1"), but PDF producers
+// almost always keep the *subset tag + real font name* inside it (e.g.
+// "g_d0_f1+ArialMT-Bold"), which is enough to catch weight/style even though
+// we can't recover the exact embedded font program itself (see README).
+function guessBold(name: string): boolean {
+  const n = name.toLowerCase();
+  return /bold|black|heavy|semibold/.test(n);
+}
+
+function guessItalic(name: string): boolean {
+  const n = name.toLowerCase();
+  return /italic|oblique/.test(n);
 }
 
 /**

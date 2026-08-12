@@ -9,8 +9,11 @@ interface Props {
   zoom: number;
   activeTool: ToolId;
   elements: EditorElement[];
+  eraseWidth: number;
+  eraseThickness: number;
   onAddElement: (el: EditorElement) => void;
   onUpdateElement: (id: string, patch: Partial<EditorElement>) => void;
+  onDeleteElement: (id: string) => void;
   onSelectElement: (id: string | null) => void;
   selectedId: string | null;
   pendingImage: string | null; // dataUrl queued from file/signature pad, placed on next click
@@ -24,8 +27,11 @@ export function PdfCanvas({
   zoom,
   activeTool,
   elements,
+  eraseWidth,
+  eraseThickness,
   onAddElement,
   onUpdateElement,
+  onDeleteElement,
   onSelectElement,
   selectedId,
   pendingImage,
@@ -128,19 +134,34 @@ export function PdfCanvas({
       } as EditorElement);
       onConsumePendingImage();
     } else if (activeTool === "erase") {
-      onAddElement({
-        id: crypto.randomUUID(),
-        kind: "erase",
-        page: pageIndex,
-        x: x - 40,
-        y: y - 12,
-        width: 80,
-        height: 24,
-        color: "#ffffff",
-      } as EditorElement);
+      const hit = findElementAt(x, y);
+      if (hit) {
+        onDeleteElement(hit.id);
+      } else {
+        onAddElement({
+          id: crypto.randomUUID(),
+          kind: "erase",
+          page: pageIndex,
+          x: x - eraseWidth / 2,
+          y: y - eraseThickness / 2,
+          width: eraseWidth,
+          height: eraseThickness,
+          color: "#ffffff",
+        } as EditorElement);
+      }
     } else {
       onSelectElement(null);
     }
+  }
+
+  /** Topmost element under (x, y) — used so the erase tool can delete your
+   *  own added elements outright instead of patching over them. */
+  function findElementAt(x: number, y: number): EditorElement | undefined {
+    for (let i = pageElements.length - 1; i >= 0; i--) {
+      const el = pageElements[i];
+      if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) return el;
+    }
+    return undefined;
   }
 
   function startDrag(e: React.MouseEvent, id: string) {
@@ -342,7 +363,14 @@ function OverlayElement({
   if (el.kind === "text") {
     return (
       <div
-        style={{ ...baseStyle, fontSize: el.fontSize, color: el.color, fontFamily: "var(--font-ui)" }}
+        style={{
+          ...baseStyle,
+          fontSize: el.fontSize,
+          color: el.color,
+          fontFamily: "var(--font-ui)",
+          fontWeight: el.bold ? 700 : 400,
+          fontStyle: el.italic ? "italic" : "normal",
+        }}
         contentEditable
         suppressContentEditableWarning
         onMouseDown={onMouseDown}

@@ -79,7 +79,15 @@ interface TopBarProps {
   numPages: number;
   canUndo: boolean;
   canRedo: boolean;
+  canReset: boolean;
+  activeTool: ToolId;
+  eraseWidth: number;
+  eraseThickness: number;
+  onEraseWidthChange: (w: number) => void;
+  onEraseThicknessChange: (h: number) => void;
   onOpen: () => void;
+  onClose: () => void;
+  onReset: () => void;
   onZoom: (z: number) => void;
   onPage: (p: number) => void;
   onExport: (format: "pdf" | "png" | "jpg") => void;
@@ -96,7 +104,15 @@ export function TopBar({
   numPages,
   canUndo,
   canRedo,
+  canReset,
+  activeTool,
+  eraseWidth,
+  eraseThickness,
+  onEraseWidthChange,
+  onEraseThicknessChange,
   onOpen,
+  onClose,
+  onReset,
   onZoom,
   onPage,
   onExport,
@@ -114,10 +130,15 @@ export function TopBar({
         <button className="btn-ghost" onClick={onOpenProject} title="Open a saved .pdfedits project">
           Open project
         </button>
+        {numPages > 0 && (
+          <button className="btn-ghost" onClick={onClose} title="Close this PDF">
+            Close
+          </button>
+        )}
         <span className="file-name">{fileName ?? "No file open"}</span>
       </div>
 
-      {numPages > 0 && (
+      {numPages > 0 && activeTool !== "erase" && (
         <div className="top-bar-center">
           <button className="btn-ghost sm" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
             ↶
@@ -146,7 +167,26 @@ export function TopBar({
         </div>
       )}
 
+      {numPages > 0 && activeTool === "erase" && (
+        <div className="top-bar-center erase-controls">
+          <label className="erase-slider">
+            <span>Width</span>
+            <input type="range" min={20} max={400} value={eraseWidth} onChange={(e) => onEraseWidthChange(Number(e.target.value))} />
+            <span className="erase-value">{eraseWidth}px</span>
+          </label>
+          <label className="erase-slider">
+            <span>Thickness</span>
+            <input type="range" min={8} max={80} value={eraseThickness} onChange={(e) => onEraseThicknessChange(Number(e.target.value))} />
+            <span className="erase-value">{eraseThickness}px</span>
+          </label>
+          <span className="erase-hint">Click your own text/image/signature to delete it — click PDF content to patch it</span>
+        </div>
+      )}
+
       <div className="top-bar-right">
+        <button className="btn-ghost" onClick={onReset} disabled={!canReset} title="Remove every edit made on this PDF">
+          Reset edits
+        </button>
         <button className="btn-ghost" onClick={onSaveProject} disabled={numPages === 0} title="Save edits + PDF as a reopenable project file">
           Save project
         </button>
@@ -198,6 +238,29 @@ export function TopBar({
           height: 20px;
           background: var(--ink-700);
           margin: 0 4px;
+        }
+        .erase-controls {
+          gap: 16px;
+        }
+        .erase-slider {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-on-ink-dim);
+        }
+        .erase-slider input[type="range"] {
+          width: 90px;
+          accent-color: var(--accent-amber);
+        }
+        .erase-value {
+          min-width: 34px;
+        }
+        .erase-hint {
+          font-size: 11px;
+          color: var(--text-on-ink-dim);
+          font-style: italic;
         }
         .btn-primary, .btn-ghost {
           font-family: var(--font-ui);

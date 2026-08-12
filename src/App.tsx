@@ -5,13 +5,8 @@ import { PdfCanvas } from "./components/PdfCanvas";
 import { SidePanel } from "./components/SidePanel";
 import { SignaturePad } from "./components/SignaturePad";
 import { ThumbnailStrip } from "./components/ThumbnailStrip";
-import {
-  base64ToBytes,
-  bytesToBase64,
-  canvasToImageBytes,
-  flattenToPdf,
-  loadPdfDocument,
-} from "./lib/pdfEngine";
+import { base64ToBytes, bytesToBase64, canvasToImageBytes, flattenToPdf, loadPdfDocument } from "./lib/pdfEngine";
+import { openBinaryFileDialog, openTextFileDialog, saveBinaryFile, saveTextFile } from "./lib/nativeIO";
 import type { EditorElement, ExistingTextItem, ProjectFile, ToolId } from "./lib/types";
 
 const RENDER_SCALE_BASE = 1.4;
@@ -23,13 +18,15 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
-  const [zoomStep, setZoomStep] = useState(1); // multiplier on top of RENDER_SCALE_BASE
+  const [zoomStep, setZoomStep] = useState(1);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [elements, setElements] = useState<EditorElement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showSigPad, setShowSigPad] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [eraseWidth, setEraseWidth] = useState(120);
+  const [eraseThickness, setEraseThickness] = useState(24);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +53,27 @@ export default function App() {
     futureRef.current = [];
     setHistoryTick((t) => t + 1);
   }, []);
+
+  function closeDocument() {
+    if (elements.length > 0 && !window.confirm("Close this PDF? Any unsaved edits will be lost.")) return;
+    setPdfBytes(null);
+    setPdfDoc(null);
+    setFileName(null);
+    setNumPages(0);
+    setCurrentPage(0);
+    setElements([]);
+    setSelectedId(null);
+    pastRef.current = [];
+    futureRef.current = [];
+    setHistoryTick((t) => t + 1);
+  }
+
+  function resetAllEdits() {
+    if (elements.length === 0) return;
+    if (!window.confirm("Reset all edits on this PDF? This removes every text, image, signature, and erase change you've made.")) return;
+    commit(() => []);
+    setSelectedId(null);
+  }
 
   function commit(mutator: (prev: EditorElement[]) => EditorElement[]) {
     setElements((prev) => {
@@ -90,6 +108,11 @@ export default function App() {
   }
 
   async function handleOpenClick() {
+    const native = await openBinaryFileDialog([{ name: "PDF", extensions: ["pdf"] }]);
+    if (native) {
+      await openFile(native.bytes, native.name);
+      return;
+    }
     fileInputRef.current?.click();
   }
 
@@ -140,6 +163,7 @@ export default function App() {
   }
 
   function commitExistingTextEdit(item: ExistingTextItem, newText: string, backgroundColor: string) {
+    const textId = `${item.id}-text`;
     commit((prev) => [
       ...prev,
       {
@@ -153,7 +177,7 @@ export default function App() {
         color: backgroundColor,
       },
       {
-        id: `${item.id}-text`,
+        id: textId,
         kind: "text",
         page: item.page,
         x: item.x,
@@ -164,8 +188,13 @@ export default function App() {
         fontSize: item.fontSize,
         color: "#14171f",
         fontFamily: item.fontFamily,
+        bold: item.bold,
+        italic: item.italic,
       },
     ]);
+    // So the properties panel shows font/color controls right away, letting
+    // the user correct the auto-detected font family/weight if it's off.
+    setSelectedId(textId);
   }
 
   async function handleExport(format: "pdf" | "png" | "jpg") {
@@ -174,11 +203,10 @@ export default function App() {
 
     if (format === "pdf") {
       const outBytes = await flattenToPdf(pdfBytes, elements, renderScale);
-      downloadBlob(new Blob([outBytes.slice().buffer], { type: "application/pdf" }), `${baseName}-edited.pdf`);
+      await saveBinaryFile(outBytes, `${baseName}-edited.pdf`, [{ name: "PDF", extensions: ["pdf"] }]);
       return;
     }
 
-    // PNG/JPG: export the currently visible page's canvas, overlays flattened via re-render.
     const canvas = document.querySelector(".pdf-canvas") as HTMLCanvasElement | null;
     if (!canvas) return;
     const composite = document.createElement("canvas");
@@ -192,7 +220,9 @@ export default function App() {
         ctx.fillRect(el.x, el.y, el.width, el.height);
       } else if (el.kind === "text") {
         ctx.fillStyle = el.color;
-        ctx.font = `${el.fontSize}px sans-serif`;
+        const weight = el.bold ? "bold " : "";
+        const style = el.italic ? "italic " : "";
+        ctx.font = `${style}${weight}${el.fontSize}px sans-serif`;
         ctx.fillText(el.content, el.x, el.y + el.fontSize);
       } else if (el.kind === "image" || el.kind === "signature") {
         const img = new Image();
@@ -202,10 +232,13 @@ export default function App() {
       }
     }
     const blob = await canvasToImageBytes(composite, format);
-    downloadBlob(blob, `${baseName}-page${currentPage + 1}.${format}`);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    await saveBinaryFile(bytes, `${baseName}-page${currentPage + 1}.${format}`, [
+      { name: format.toUpperCase(), extensions: [format] },
+    ]);
   }
 
-  function handleSaveProject() {
+  async function handleSaveProject() {
     if (!pdfBytes) return;
     const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
     const project: ProjectFile = {
@@ -215,10 +248,28 @@ export default function App() {
       pdfBase64: bytesToBase64(pdfBytes),
       elements,
     };
-    downloadBlob(new Blob([JSON.stringify(project)], { type: "application/json" }), `${baseName}.pdfedits`);
+    await saveTextFile(JSON.stringify(project), `${baseName}.pdfedits`, [
+      { name: "PDFedits Project", extensions: ["pdfedits"] },
+    ]);
   }
 
-  function handleOpenProjectClick() {
+  async function loadProjectFromText(text: string) {
+    const project = JSON.parse(text) as ProjectFile;
+    if (project.format !== "pdfedits-project") throw new Error("Not a PDFedits project file");
+    const bytes = base64ToBytes(project.pdfBase64);
+    await openFile(bytes, project.fileName, project.elements);
+  }
+
+  async function handleOpenProjectClick() {
+    const native = await openTextFileDialog([{ name: "PDFedits Project", extensions: ["pdfedits"] }]);
+    if (native) {
+      try {
+        await loadProjectFromText(native.text);
+      } catch {
+        window.alert("Couldn't open that project file. Make sure it's a .pdfedits file saved from this app.");
+      }
+      return;
+    }
     projectInputRef.current?.click();
   }
 
@@ -227,26 +278,14 @@ export default function App() {
     if (!file) return;
     try {
       const text = await file.text();
-      const project = JSON.parse(text) as ProjectFile;
-      if (project.format !== "pdfedits-project") throw new Error("Not a PDFedits project file");
-      const bytes = base64ToBytes(project.pdfBase64);
-      await openFile(bytes, project.fileName, project.elements);
-    } catch (err) {
-      alert("Couldn't open that project file. Make sure it's a .pdfedits file saved from this app.");
+      await loadProjectFromText(text);
+    } catch {
+      window.alert("Couldn't open that project file. Make sure it's a .pdfedits file saved from this app.");
     }
     e.target.value = "";
   }
 
-  function downloadBlob(blob: Blob, name: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // Drag-and-drop a PDF (or .pdfedits project) straight onto the window.
+  // Drag-and-drop a PDF (or a .pdfedits project) straight onto the window.
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDraggingFile(false);
@@ -255,11 +294,9 @@ export default function App() {
     if (file.name.toLowerCase().endsWith(".pdfedits")) {
       file.text().then(async (text) => {
         try {
-          const project = JSON.parse(text) as ProjectFile;
-          const bytes = base64ToBytes(project.pdfBase64);
-          await openFile(bytes, project.fileName, project.elements);
+          await loadProjectFromText(text);
         } catch {
-          alert("Couldn't open that project file.");
+          window.alert("Couldn't open that project file.");
         }
       });
     } else if (file.type === "application/pdf") {
@@ -328,7 +365,15 @@ export default function App() {
         numPages={numPages}
         canUndo={pastRef.current.length > 0}
         canRedo={futureRef.current.length > 0}
+        canReset={elements.length > 0}
+        activeTool={activeTool}
+        eraseWidth={eraseWidth}
+        eraseThickness={eraseThickness}
+        onEraseWidthChange={setEraseWidth}
+        onEraseThicknessChange={setEraseThickness}
         onOpen={handleOpenClick}
+        onClose={closeDocument}
+        onReset={resetAllEdits}
         onZoom={setZoomStep}
         onPage={setCurrentPage}
         onExport={handleExport}
@@ -349,8 +394,11 @@ export default function App() {
             zoom={renderScale}
             activeTool={activeTool}
             elements={elements}
+            eraseWidth={eraseWidth}
+            eraseThickness={eraseThickness}
             onAddElement={addElement}
             onUpdateElement={updateElement}
+            onDeleteElement={deleteElement}
             onSelectElement={setSelectedId}
             selectedId={selectedId}
             pendingImage={pendingImage}

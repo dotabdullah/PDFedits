@@ -102,8 +102,44 @@ function TextProps({ el, onUpdate }: { el: TextElement; onUpdate: Props["onUpdat
         <option value="serif">Serif</option>
         <option value="mono">Mono</option>
       </select>
+      <label className="field-label">Style</label>
+      <div className="style-toggles">
+        <button
+          type="button"
+          className={`toggle-btn ${el.bold ? "is-on" : ""}`}
+          onClick={() => onUpdate(el.id, { bold: !el.bold })}
+        >
+          B
+        </button>
+        <button
+          type="button"
+          className={`toggle-btn ${el.italic ? "is-on" : ""}`}
+          onClick={() => onUpdate(el.id, { italic: !el.italic })}
+        >
+          I
+        </button>
+      </div>
       <label className="field-label">Color</label>
       <input type="color" value={el.color} onChange={(e) => onUpdate(el.id, { color: e.target.value })} />
+      <style>{`
+        .style-toggles { display: flex; gap: 6px; }
+        .toggle-btn {
+          width: 32px; height: 30px;
+          background: var(--ink-700);
+          border: 1px solid var(--ink-700);
+          color: var(--text-on-ink);
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          font-family: var(--font-ui);
+          font-size: 13px;
+        }
+        .toggle-btn:nth-child(2) { font-style: italic; }
+        .toggle-btn.is-on {
+          background: var(--accent-amber);
+          border-color: var(--accent-amber);
+          color: var(--ink-900);
+        }
+      `}</style>
     </div>
   );
 }

@@ -15,6 +15,8 @@ export interface TextElement extends BaseElement {
   fontSize: number;
   color: string; // hex
   fontFamily: "sans" | "serif" | "mono";
+  bold?: boolean;
+  italic?: boolean;
 }
 
 export interface ImageElement extends BaseElement {
@@ -50,6 +52,8 @@ export interface ExistingTextItem {
   text: string;
   fontSize: number;
   fontFamily: "sans" | "serif" | "mono";
+  bold: boolean;
+  italic: boolean;
 }
 
 /** Serialized session: original PDF bytes + all edits, reopenable later. */
