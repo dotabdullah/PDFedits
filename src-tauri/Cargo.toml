@@ -1,6 +1,6 @@
 [package]
 name = "pdfedits-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "PDFedits — offline desktop PDF editor"
 authors = ["Abdullah"]
 edition = "2021"

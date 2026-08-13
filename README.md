@@ -1,5 +1,7 @@
 # PDFedits — Offline PDF Editor
 
+**Current version: v0.1.1** — see [CHANGELOG.md](./CHANGELOG.md) for release history.
+
 Free, offline, desktop PDF editor. Tauri + React + TypeScript frontend, `pdf.js` for rendering and reading existing text, `pdf-lib` for writing edits back into the PDF.
 
 ## What it does
