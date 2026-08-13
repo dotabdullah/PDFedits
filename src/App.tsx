@@ -162,7 +162,7 @@ export default function App() {
     setSelectedId(null);
   }
 
-  function commitExistingTextEdit(item: ExistingTextItem, newText: string, backgroundColor: string) {
+  function commitExistingTextEdit(item: ExistingTextItem, newText: string, backgroundColor: string, width: number) {
     const textId = `${item.id}-text`;
     commit((prev) => [
       ...prev,
@@ -172,7 +172,7 @@ export default function App() {
         page: item.page,
         x: item.x - 1,
         y: item.y - 1,
-        width: item.width + 2,
+        width: width + 2,
         height: item.height + 2,
         color: backgroundColor,
       },
@@ -182,7 +182,7 @@ export default function App() {
         page: item.page,
         x: item.x,
         y: item.y,
-        width: Math.max(item.width, 40),
+        width: Math.max(width, 40),
         height: item.height,
         content: newText,
         fontSize: item.fontSize,

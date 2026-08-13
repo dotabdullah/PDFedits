@@ -18,8 +18,13 @@ interface Props {
   selectedId: string | null;
   pendingImage: string | null; // dataUrl queued from file/signature pad, placed on next click
   onConsumePendingImage: () => void;
-  onCommitTextEdit: (item: ExistingTextItem, newText: string, backgroundColor: string) => void;
+  onCommitTextEdit: (item: ExistingTextItem, newText: string, backgroundColor: string, width: number) => void;
 }
+
+type DragState =
+  | { mode: "move"; id: string; offsetX: number; offsetY: number }
+  | { mode: "resize"; id: string; startX: number; startY: number; startWidth: number; startHeight: number }
+  | { mode: "edit-width"; startX: number; startWidth: number };
 
 export function PdfCanvas({
   pdfDoc,
@@ -45,7 +50,8 @@ export function PdfCanvas({
   const [scrollRatio, setScrollRatio] = useState(0);
   const [existingText, setExistingText] = useState<ExistingTextItem[]>([]);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const [editingWidth, setEditingWidth] = useState<number | null>(null);
+  const dragState = useRef<DragState | null>(null);
   const cancelEditRef = useRef(false);
 
   useEffect(() => {
@@ -69,6 +75,7 @@ export function PdfCanvas({
     if (activeTool !== "select") return;
     e.stopPropagation();
     setEditingItemId(item.id);
+    setEditingWidth(item.width);
     cancelEditRef.current = false;
   }
 
@@ -92,11 +99,13 @@ export function PdfCanvas({
 
   function handleExistingTextBlur(e: React.FocusEvent, item: ExistingTextItem) {
     setEditingItemId(null);
+    const width = editingWidth ?? item.width;
+    setEditingWidth(null);
     if (cancelEditRef.current) return;
     const newText = (e.currentTarget.textContent ?? "").trim();
     if (!newText || newText === item.text) return;
     const bg = canvasRef.current ? sampleBackgroundColor(canvasRef.current, item.x, item.y) : "#ffffff";
-    onCommitTextEdit(item, newText, bg);
+    onCommitTextEdit(item, newText, bg, width);
   }
 
   function handleCanvasClick(e: React.MouseEvent) {
@@ -134,52 +143,70 @@ export function PdfCanvas({
       } as EditorElement);
       onConsumePendingImage();
     } else if (activeTool === "erase") {
-      const hit = findElementAt(x, y);
-      if (hit) {
-        onDeleteElement(hit.id);
-      } else {
-        onAddElement({
-          id: crypto.randomUUID(),
-          kind: "erase",
-          page: pageIndex,
-          x: x - eraseWidth / 2,
-          y: y - eraseThickness / 2,
-          width: eraseWidth,
-          height: eraseThickness,
-          color: "#ffffff",
-        } as EditorElement);
-      }
+      // Clicking an existing element is handled by its own mousedown (delete);
+      // this only fires for clicks on empty space / raw PDF content.
+      onAddElement({
+        id: crypto.randomUUID(),
+        kind: "erase",
+        page: pageIndex,
+        x: x - eraseWidth / 2,
+        y: y - eraseThickness / 2,
+        width: eraseWidth,
+        height: eraseThickness,
+        color: "#ffffff",
+      } as EditorElement);
     } else {
       onSelectElement(null);
     }
   }
 
-  /** Topmost element under (x, y) — used so the erase tool can delete your
-   *  own added elements outright instead of patching over them. */
-  function findElementAt(x: number, y: number): EditorElement | undefined {
-    for (let i = pageElements.length - 1; i >= 0; i--) {
-      const el = pageElements[i];
-      if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) return el;
-    }
-    return undefined;
-  }
-
-  function startDrag(e: React.MouseEvent, id: string) {
-    if (activeTool !== "select") return;
+  /** Clicking an element you've already placed should always select it (and
+   *  show its properties) or, with the erase tool, delete it — regardless of
+   *  which tool happens to be active. Only empty-canvas clicks are tool-specific. */
+  function handleElementMouseDown(e: React.MouseEvent, id: string) {
     e.stopPropagation();
+    if (activeTool === "erase") {
+      onDeleteElement(id);
+      return;
+    }
+    onSelectElement(id);
+    if (activeTool !== "select") return; // dragging/resizing only while in Select mode
     const el = elements.find((el) => el.id === id);
     const rect = overlayRef.current?.getBoundingClientRect();
     if (!el || !rect) return;
-    dragState.current = { id, offsetX: e.clientX - rect.left - el.x, offsetY: e.clientY - rect.top - el.y };
+    dragState.current = { mode: "move", id, offsetX: e.clientX - rect.left - el.x, offsetY: e.clientY - rect.top - el.y };
+  }
+
+  function startResize(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    const el = elements.find((el) => el.id === id);
+    if (!el) return;
+    dragState.current = { mode: "resize", id, startX: e.clientX, startY: e.clientY, startWidth: el.width, startHeight: el.height };
     onSelectElement(id);
   }
 
+  function startEditWidthResize(e: React.MouseEvent, currentWidth: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    dragState.current = { mode: "edit-width", startX: e.clientX, startWidth: currentWidth };
+  }
+
   function onDrag(e: React.MouseEvent) {
-    if (!dragState.current) return;
+    const state = dragState.current;
+    if (!state) return;
     const rect = overlayRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const { id, offsetX, offsetY } = dragState.current;
-    onUpdateElement(id, { x: e.clientX - rect.left - offsetX, y: e.clientY - rect.top - offsetY });
+
+    if (state.mode === "move") {
+      onUpdateElement(state.id, { x: e.clientX - rect.left - state.offsetX, y: e.clientY - rect.top - state.offsetY });
+    } else if (state.mode === "resize") {
+      const newWidth = Math.max(20, state.startWidth + (e.clientX - state.startX));
+      const newHeight = Math.max(14, state.startHeight + (e.clientY - state.startY));
+      onUpdateElement(state.id, { width: newWidth, height: newHeight });
+    } else if (state.mode === "edit-width") {
+      const newWidth = Math.max(30, state.startWidth + (e.clientX - state.startX));
+      setEditingWidth(newWidth);
+    }
   }
 
   function endDrag() {
@@ -208,7 +235,8 @@ export function PdfCanvas({
               key={el.id}
               el={el}
               selected={selectedId === el.id}
-              onMouseDown={(e) => startDrag(e, el.id)}
+              onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+              onResizeStart={(e) => startResize(e, el.id)}
               onChangeText={(text) => onUpdateElement(el.id, { content: text } as Partial<TextElement>)}
             />
           ))}
@@ -217,19 +245,33 @@ export function PdfCanvas({
         <div className="existing-text-layer" style={{ width: pageSize.width, height: pageSize.height }}>
           {editableTextItems.map((item) =>
             editingItemId === item.id ? (
-              <div
-                key={item.id}
-                className="existing-text-editing"
-                style={{ left: item.x, top: item.y, width: Math.max(item.width, 40), minHeight: item.height, fontSize: item.fontSize, pointerEvents: "auto" }}
-                contentEditable
-                suppressContentEditableWarning
-                autoFocus
-                onFocus={(e) => selectAllText(e.currentTarget)}
-                onKeyDown={handleExistingTextKeyDown}
-                onBlur={(e) => handleExistingTextBlur(e, item)}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                {item.text}
+              <div key={item.id} className="editing-wrap">
+                <div
+                  className="existing-text-editing"
+                  style={{
+                    left: item.x,
+                    top: item.y,
+                    width: editingWidth ?? item.width,
+                    minHeight: item.height,
+                    fontSize: item.fontSize,
+                    pointerEvents: "auto",
+                  }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  autoFocus
+                  onFocus={(e) => selectAllText(e.currentTarget)}
+                  onKeyDown={handleExistingTextKeyDown}
+                  onBlur={(e) => handleExistingTextBlur(e, item)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  {item.text}
+                </div>
+                <div
+                  className="edit-width-handle"
+                  style={{ left: item.x + (editingWidth ?? item.width), top: item.y + item.height / 2, pointerEvents: "auto" }}
+                  title="Drag to fit on one line, or narrower to wrap"
+                  onMouseDown={(e) => startEditWidthResize(e, editingWidth ?? item.width)}
+                />
               </div>
             ) : (
               <div
@@ -284,6 +326,17 @@ export function PdfCanvas({
         .overlay-crosshair {
           cursor: crosshair;
         }
+        .resize-handle {
+          position: absolute;
+          width: 11px;
+          height: 11px;
+          margin-left: -6px;
+          margin-top: -6px;
+          background: var(--accent-amber);
+          border: 1px solid var(--ink-900);
+          border-radius: 2px;
+          cursor: nwse-resize;
+        }
         .existing-text-layer {
           position: absolute;
           top: 0;
@@ -309,6 +362,17 @@ export function PdfCanvas({
           padding: 1px 2px;
           white-space: pre-wrap;
           line-height: 1.15;
+        }
+        .edit-width-handle {
+          position: absolute;
+          width: 10px;
+          height: 22px;
+          margin-left: -5px;
+          margin-top: -11px;
+          background: var(--accent-amber);
+          border: 1px solid var(--ink-900);
+          border-radius: 2px;
+          cursor: ew-resize;
         }
         .page-gauge {
           position: fixed;
@@ -343,11 +407,13 @@ function OverlayElement({
   el,
   selected,
   onMouseDown,
+  onResizeStart,
   onChangeText,
 }: {
   el: EditorElement;
   selected: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
+  onResizeStart: (e: React.MouseEvent) => void;
   onChangeText: (v: string) => void;
 }) {
   const baseStyle: React.CSSProperties = {
@@ -360,31 +426,49 @@ function OverlayElement({
     cursor: "move",
   };
 
+  const handle = selected && (
+    <div className="resize-handle" style={{ left: el.x + el.width, top: el.y + el.height }} onMouseDown={onResizeStart} />
+  );
+
   if (el.kind === "text") {
     return (
-      <div
-        style={{
-          ...baseStyle,
-          fontSize: el.fontSize,
-          color: el.color,
-          fontFamily: "var(--font-ui)",
-          fontWeight: el.bold ? 700 : 400,
-          fontStyle: el.italic ? "italic" : "normal",
-        }}
-        contentEditable
-        suppressContentEditableWarning
-        onMouseDown={onMouseDown}
-        onBlur={(e) => onChangeText(e.currentTarget.textContent ?? "")}
-      >
-        {el.content}
-      </div>
+      <>
+        <div
+          style={{
+            ...baseStyle,
+            fontSize: el.fontSize,
+            color: el.color,
+            fontFamily: "var(--font-ui)",
+            fontWeight: el.bold ? 700 : 400,
+            fontStyle: el.italic ? "italic" : "normal",
+            overflow: "hidden",
+          }}
+          contentEditable
+          suppressContentEditableWarning
+          onMouseDown={onMouseDown}
+          onBlur={(e) => onChangeText(e.currentTarget.textContent ?? "")}
+        >
+          {el.content}
+        </div>
+        {handle}
+      </>
     );
   }
 
   if (el.kind === "image" || el.kind === "signature") {
-    return <img src={el.dataUrl} style={{ ...baseStyle, objectFit: "contain" }} onMouseDown={onMouseDown} draggable={false} />;
+    return (
+      <>
+        <img src={el.dataUrl} style={{ ...baseStyle, objectFit: "contain" }} onMouseDown={onMouseDown} draggable={false} />
+        {handle}
+      </>
+    );
   }
 
   // erase patch
-  return <div style={{ ...baseStyle, background: el.color }} onMouseDown={onMouseDown} />;
+  return (
+    <>
+      <div style={{ ...baseStyle, background: el.color }} onMouseDown={onMouseDown} />
+      {handle}
+    </>
+  );
 }
