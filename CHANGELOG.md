@@ -2,6 +2,18 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.1.4] — 2026-08-13
+
+### Fixed
+- **Selecting a placed element — or the properties panel showing up at all — was unreliable.** Root cause: `stopPropagation()` on a `mousedown` event does *not* stop the separate `click` event that follows it from bubbling. Every element's click handler now stops both, so clicking a text/image/signature/erase element always selects it instead of the click leaking through to the canvas and immediately deselecting it (or, worse, placing a duplicate element right on top). This was the real cause behind "no option to see properties of updated text" and "can't resize images" — both symptoms of the same underlying selection bug.
+- **Wrapped multi-line text was getting clipped.** Text elements used a fixed height with `overflow: hidden`; if edited text wrapped to 2–3 lines, everything past the first line was invisible. Height is now automatic and content is never clipped.
+- **`.pdfedits` project files failing to reopen, even freshly saved ones.** Two changes here: the fs capability scope was narrowed to specific OS folders (Documents/Downloads/Home) in 0.1.1, which is the likely culprit if your file lived somewhere else — it's now maximally permissive (`**`), appropriate for a single-user offline desktop app. Separately, error handling was swallowing the *real* error and always showing the same generic "couldn't open" message regardless of cause — every open/save failure now shows the actual underlying error, so if this happens again the message will actually say why.
+
+### Added
+- **Resize handles now work end-to-end** — the click-bubbling bug above was blocking them from being usable even though the code existed since 0.1.2.
+- **Hand cursor** on every placed element (`grab` while idle, `grabbing` while dragging) so it's visually obvious what's draggable.
+- **Save vs. Save As**, for both the PDF export and the project file: "Save" reuses the location from your last save this session (no dialog); "Save As…" always prompts and remembers the new location for the next quick Save.
+
 ## [0.1.3] — 2026-08-13
 
 ### Fixed

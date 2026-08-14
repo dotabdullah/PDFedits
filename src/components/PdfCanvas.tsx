@@ -162,7 +162,11 @@ export function PdfCanvas({
 
   /** Clicking an element you've already placed should always select it (and
    *  show its properties) or, with the erase tool, delete it — regardless of
-   *  which tool happens to be active. Only empty-canvas clicks are tool-specific. */
+   *  which tool happens to be active. Only empty-canvas clicks are tool-specific.
+   *  Note: stopping propagation on mousedown alone doesn't stop the separate
+   *  click event that follows — both need it, or the click bubbles up to the
+   *  overlay's onClick and immediately deselects (or worse, places a new
+   *  element right on top of the one you just clicked). */
   function handleElementMouseDown(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (activeTool === "erase") {
@@ -175,6 +179,10 @@ export function PdfCanvas({
     const rect = overlayRef.current?.getBoundingClientRect();
     if (!el || !rect) return;
     dragState.current = { mode: "move", id, offsetX: e.clientX - rect.left - el.x, offsetY: e.clientY - rect.top - el.y };
+  }
+
+  function handleElementClick(e: React.MouseEvent) {
+    e.stopPropagation();
   }
 
   function startResize(e: React.MouseEvent, id: string) {
@@ -236,6 +244,7 @@ export function PdfCanvas({
               el={el}
               selected={selectedId === el.id}
               onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+              onClick={handleElementClick}
               onResizeStart={(e) => startResize(e, el.id)}
               onChangeText={(text) => onUpdateElement(el.id, { content: text } as Partial<TextElement>)}
             />
@@ -326,6 +335,12 @@ export function PdfCanvas({
         .overlay-crosshair {
           cursor: crosshair;
         }
+        .element-draggable {
+          cursor: grab;
+        }
+        .element-draggable:active {
+          cursor: grabbing;
+        }
         .resize-handle {
           position: absolute;
           width: 11px;
@@ -407,12 +422,14 @@ function OverlayElement({
   el,
   selected,
   onMouseDown,
+  onClick,
   onResizeStart,
   onChangeText,
 }: {
   el: EditorElement;
   selected: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
+  onClick: (e: React.MouseEvent) => void;
   onResizeStart: (e: React.MouseEvent) => void;
   onChangeText: (v: string) => void;
 }) {
@@ -423,29 +440,32 @@ function OverlayElement({
     width: el.width,
     height: el.height,
     outline: selected ? "2px solid var(--accent-amber)" : "1px dashed transparent",
-    cursor: "move",
   };
 
   const handle = selected && (
-    <div className="resize-handle" style={{ left: el.x + el.width, top: el.y + el.height }} onMouseDown={onResizeStart} />
+    <div className="resize-handle" style={{ left: el.x + el.width, top: el.y + el.height }} onMouseDown={onResizeStart} onClick={onClick} />
   );
 
   if (el.kind === "text") {
     return (
       <>
         <div
+          className="element-draggable"
           style={{
             ...baseStyle,
+            height: "auto",
+            minHeight: el.height,
+            overflow: "visible",
             fontSize: el.fontSize,
             color: el.color,
             fontFamily: "var(--font-ui)",
             fontWeight: el.bold ? 700 : 400,
             fontStyle: el.italic ? "italic" : "normal",
-            overflow: "hidden",
           }}
           contentEditable
           suppressContentEditableWarning
           onMouseDown={onMouseDown}
+          onClick={onClick}
           onBlur={(e) => onChangeText(e.currentTarget.textContent ?? "")}
         >
           {el.content}
@@ -458,7 +478,14 @@ function OverlayElement({
   if (el.kind === "image" || el.kind === "signature") {
     return (
       <>
-        <img src={el.dataUrl} style={{ ...baseStyle, objectFit: "contain" }} onMouseDown={onMouseDown} draggable={false} />
+        <img
+          className="element-draggable"
+          src={el.dataUrl}
+          style={{ ...baseStyle, objectFit: "contain" }}
+          onMouseDown={onMouseDown}
+          onClick={onClick}
+          draggable={false}
+        />
         {handle}
       </>
     );
@@ -467,7 +494,7 @@ function OverlayElement({
   // erase patch
   return (
     <>
-      <div style={{ ...baseStyle, background: el.color }} onMouseDown={onMouseDown} />
+      <div className="element-draggable" style={{ ...baseStyle, background: el.color }} onMouseDown={onMouseDown} onClick={onClick} />
       {handle}
     </>
   );

@@ -6,7 +6,14 @@ import { SidePanel } from "./components/SidePanel";
 import { SignaturePad } from "./components/SignaturePad";
 import { ThumbnailStrip } from "./components/ThumbnailStrip";
 import { base64ToBytes, bytesToBase64, canvasToImageBytes, flattenToPdf, loadPdfDocument } from "./lib/pdfEngine";
-import { openBinaryFileDialog, openTextFileDialog, saveBinaryFile, saveTextFile } from "./lib/nativeIO";
+import {
+  openBinaryFileDialog,
+  openTextFileDialog,
+  saveBinaryFileAs,
+  saveTextFileAs,
+  writeBinaryToPath,
+  writeTextToPath,
+} from "./lib/nativeIO";
 import type { EditorElement, ExistingTextItem, ProjectFile, ToolId } from "./lib/types";
 
 const RENDER_SCALE_BASE = 1.4;
@@ -27,6 +34,8 @@ export default function App() {
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [eraseWidth, setEraseWidth] = useState(120);
   const [eraseThickness, setEraseThickness] = useState(24);
+  const [savedPdfPath, setSavedPdfPath] = useState<string | null>(null);
+  const [savedProjectPath, setSavedProjectPath] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +58,8 @@ export default function App() {
     setCurrentPage(0);
     setElements(restoredElements);
     setSelectedId(null);
+    setSavedPdfPath(null);
+    setSavedProjectPath(null);
     pastRef.current = [];
     futureRef.current = [];
     setHistoryTick((t) => t + 1);
@@ -63,6 +74,8 @@ export default function App() {
     setCurrentPage(0);
     setElements([]);
     setSelectedId(null);
+    setSavedPdfPath(null);
+    setSavedProjectPath(null);
     pastRef.current = [];
     futureRef.current = [];
     setHistoryTick((t) => t + 1);
@@ -108,9 +121,14 @@ export default function App() {
   }
 
   async function handleOpenClick() {
-    const native = await openBinaryFileDialog([{ name: "PDF", extensions: ["pdf"] }]);
-    if (native) {
-      await openFile(native.bytes, native.name);
+    try {
+      const native = await openBinaryFileDialog([{ name: "PDF", extensions: ["pdf"] }]);
+      if (native) {
+        await openFile(native.bytes, native.name);
+        return;
+      }
+    } catch (err) {
+      window.alert(`Couldn't open that PDF.\n\n${errorMessage(err)}`);
       return;
     }
     fileInputRef.current?.click();
@@ -197,15 +215,42 @@ export default function App() {
     setSelectedId(textId);
   }
 
-  async function handleExport(format: "pdf" | "png" | "jpg") {
+  async function buildEditedPdfBytes(): Promise<Uint8Array | null> {
+    if (!pdfBytes) return null;
+    return flattenToPdf(pdfBytes, elements, renderScale);
+  }
+
+  /** "Save": reuse the path from the last save in this session if we have one, else behave like Save As. */
+  async function handleSavePdf() {
+    const outBytes = await buildEditedPdfBytes();
+    if (!outBytes) return;
+    try {
+      if (savedPdfPath) {
+        await writeBinaryToPath(savedPdfPath, outBytes);
+        return;
+      }
+      await handleSavePdfAs();
+    } catch (err) {
+      window.alert(`Couldn't save the PDF.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  /** "Save As": always prompts for a location, and remembers it for the next quick Save. */
+  async function handleSavePdfAs() {
+    const outBytes = await buildEditedPdfBytes();
+    if (!outBytes) return;
+    const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
+    try {
+      const path = await saveBinaryFileAs(outBytes, `${baseName}-edited.pdf`, [{ name: "PDF", extensions: ["pdf"] }]);
+      if (path) setSavedPdfPath(path);
+    } catch (err) {
+      window.alert(`Couldn't save the PDF.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleExportImage(format: "png" | "jpg") {
     if (!pdfBytes) return;
     const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
-
-    if (format === "pdf") {
-      const outBytes = await flattenToPdf(pdfBytes, elements, renderScale);
-      await saveBinaryFile(outBytes, `${baseName}-edited.pdf`, [{ name: "PDF", extensions: ["pdf"] }]);
-      return;
-    }
 
     const canvas = document.querySelector(".pdf-canvas") as HTMLCanvasElement | null;
     if (!canvas) return;
@@ -233,41 +278,81 @@ export default function App() {
     }
     const blob = await canvasToImageBytes(composite, format);
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    await saveBinaryFile(bytes, `${baseName}-page${currentPage + 1}.${format}`, [
-      { name: format.toUpperCase(), extensions: [format] },
-    ]);
+    try {
+      await saveBinaryFileAs(bytes, `${baseName}-page${currentPage + 1}.${format}`, [
+        { name: format.toUpperCase(), extensions: [format] },
+      ]);
+    } catch (err) {
+      window.alert(`Couldn't save the ${format.toUpperCase()}.\n\n${errorMessage(err)}`);
+    }
   }
 
-  async function handleSaveProject() {
-    if (!pdfBytes) return;
-    const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
+  function buildProjectJson(): string {
     const project: ProjectFile = {
       format: "pdfedits-project",
       version: 1,
       fileName: fileName ?? "document.pdf",
-      pdfBase64: bytesToBase64(pdfBytes),
+      pdfBase64: bytesToBase64(pdfBytes!),
       elements,
     };
-    await saveTextFile(JSON.stringify(project), `${baseName}.pdfedits`, [
-      { name: "PDFedits Project", extensions: ["pdfedits"] },
-    ]);
+    return JSON.stringify(project);
   }
 
-  async function loadProjectFromText(text: string) {
-    const project = JSON.parse(text) as ProjectFile;
-    if (project.format !== "pdfedits-project") throw new Error("Not a PDFedits project file");
+  async function handleSaveProject() {
+    if (!pdfBytes) return;
+    try {
+      if (savedProjectPath) {
+        await writeTextToPath(savedProjectPath, buildProjectJson());
+        return;
+      }
+      await handleSaveProjectAs();
+    } catch (err) {
+      window.alert(`Couldn't save the project.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleSaveProjectAs() {
+    if (!pdfBytes) return;
+    const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
+    try {
+      const path = await saveTextFileAs(buildProjectJson(), `${baseName}.pdfedits`, [
+        { name: "PDFedits Project", extensions: ["pdfedits"] },
+      ]);
+      if (path) setSavedProjectPath(path);
+    } catch (err) {
+      window.alert(`Couldn't save the project.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function loadProjectFromText(text: string, path: string | null) {
+    let project: ProjectFile;
+    try {
+      project = JSON.parse(text) as ProjectFile;
+    } catch {
+      throw new Error("The file isn't valid JSON — it may be corrupted, or isn't actually a .pdfedits file.");
+    }
+    if (project.format !== "pdfedits-project") {
+      throw new Error(
+        `The file's "format" field was ${JSON.stringify(project.format ?? "(missing)")}, expected "pdfedits-project". This isn't a PDFedits project file.`
+      );
+    }
+    if (!project.pdfBase64) {
+      throw new Error("The project file has no embedded PDF data (pdfBase64 is missing).");
+    }
     const bytes = base64ToBytes(project.pdfBase64);
-    await openFile(bytes, project.fileName, project.elements);
+    await openFile(bytes, project.fileName, project.elements ?? []);
+    setSavedProjectPath(path);
   }
 
   async function handleOpenProjectClick() {
-    const native = await openTextFileDialog([{ name: "PDFedits Project", extensions: ["pdfedits"] }]);
-    if (native) {
-      try {
-        await loadProjectFromText(native.text);
-      } catch {
-        window.alert("Couldn't open that project file. Make sure it's a .pdfedits file saved from this app.");
+    try {
+      const native = await openTextFileDialog([{ name: "PDFedits Project", extensions: ["pdfedits"] }]);
+      if (native) {
+        await loadProjectFromText(native.text, native.path);
+        return;
       }
+    } catch (err) {
+      window.alert(`Couldn't open that project file.\n\n${errorMessage(err)}`);
       return;
     }
     projectInputRef.current?.click();
@@ -278,9 +363,9 @@ export default function App() {
     if (!file) return;
     try {
       const text = await file.text();
-      await loadProjectFromText(text);
-    } catch {
-      window.alert("Couldn't open that project file. Make sure it's a .pdfedits file saved from this app.");
+      await loadProjectFromText(text, null);
+    } catch (err) {
+      window.alert(`Couldn't open that project file.\n\n${errorMessage(err)}`);
     }
     e.target.value = "";
   }
@@ -294,9 +379,9 @@ export default function App() {
     if (file.name.toLowerCase().endsWith(".pdfedits")) {
       file.text().then(async (text) => {
         try {
-          await loadProjectFromText(text);
-        } catch {
-          window.alert("Couldn't open that project file.");
+          await loadProjectFromText(text, null);
+        } catch (err) {
+          window.alert(`Couldn't open that project file.\n\n${errorMessage(err)}`);
         }
       });
     } else if (file.type === "application/pdf") {
@@ -376,7 +461,9 @@ export default function App() {
         onReset={resetAllEdits}
         onZoom={setZoomStep}
         onPage={setCurrentPage}
-        onExport={handleExport}
+        onSavePdf={handleSavePdf}
+        onSavePdfAs={handleSavePdfAs}
+        onExportImage={handleExportImage}
         onUndo={undo}
         onRedo={redo}
         onSaveProject={handleSaveProject}
@@ -443,6 +530,11 @@ export default function App() {
       `}</style>
     </div>
   );
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
 }
 
 function EmptyState({ onOpen, onOpenProject }: { onOpen: () => void; onOpenProject: () => void }) {

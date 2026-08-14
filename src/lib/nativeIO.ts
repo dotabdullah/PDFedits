@@ -25,47 +25,67 @@ function downloadInBrowser(blob: Blob, suggestedName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function saveBinaryFile(bytes: Uint8Array, suggestedName: string, filters: FileFilter[]): Promise<boolean> {
-  if (isTauriRuntime()) {
-    const path = await save({ defaultPath: suggestedName, filters });
-    if (!path) return false;
-    await writeFile(path, bytes);
-    return true;
-  }
-  downloadInBrowser(new Blob([bytes.slice().buffer]), suggestedName);
-  return true;
-}
-
-export async function saveTextFile(text: string, suggestedName: string, filters: FileFilter[]): Promise<boolean> {
-  if (isTauriRuntime()) {
-    const path = await save({ defaultPath: suggestedName, filters });
-    if (!path) return false;
-    await writeTextFile(path, text);
-    return true;
-  }
-  downloadInBrowser(new Blob([text], { type: "application/json" }), suggestedName);
-  return true;
-}
-
 function fileNameFromPath(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+/**
+ * "Save As" semantics: always opens the native dialog. Returns the chosen
+ * path so the caller can remember it for a quick re-save later, or null if
+ * the user cancelled (or we're outside Tauri, where there's no path concept
+ * — the browser just downloads it and the caller should not treat that as
+ * a reusable path).
+ *
+ * Errors from the underlying dialog/fs calls are intentionally NOT caught
+ * here — they propagate to the caller so a real permission/IO error can be
+ * shown instead of masked behind a generic message.
+ */
+export async function saveBinaryFileAs(bytes: Uint8Array, suggestedName: string, filters: FileFilter[]): Promise<string | null> {
+  if (isTauriRuntime()) {
+    const path = await save({ defaultPath: suggestedName, filters });
+    if (!path) return null;
+    await writeFile(path, bytes);
+    return path;
+  }
+  downloadInBrowser(new Blob([bytes.slice().buffer]), suggestedName);
+  return null;
+}
+
+export async function saveTextFileAs(text: string, suggestedName: string, filters: FileFilter[]): Promise<string | null> {
+  if (isTauriRuntime()) {
+    const path = await save({ defaultPath: suggestedName, filters });
+    if (!path) return null;
+    await writeTextFile(path, text);
+    return path;
+  }
+  downloadInBrowser(new Blob([text], { type: "application/json" }), suggestedName);
+  return null;
+}
+
+/** Quick re-save to an already-known path — no dialog. Tauri-only; throws if called outside Tauri. */
+export async function writeBinaryToPath(path: string, bytes: Uint8Array): Promise<void> {
+  await writeFile(path, bytes);
+}
+
+export async function writeTextToPath(path: string, text: string): Promise<void> {
+  await writeTextFile(path, text);
+}
+
 /** Returns null if the user cancelled, or if not running in Tauri (caller should fall back to an <input type="file">). */
-export async function openBinaryFileDialog(filters: FileFilter[]): Promise<{ name: string; bytes: Uint8Array } | null> {
+export async function openBinaryFileDialog(filters: FileFilter[]): Promise<{ name: string; path: string; bytes: Uint8Array } | null> {
   if (!isTauriRuntime()) return null;
   const selected = await open({ multiple: false, directory: false, filters });
   if (!selected || Array.isArray(selected)) return null;
   const bytes = await readFile(selected);
-  return { name: fileNameFromPath(selected), bytes };
+  return { name: fileNameFromPath(selected), path: selected, bytes };
 }
 
-export async function openTextFileDialog(filters: FileFilter[]): Promise<{ name: string; text: string } | null> {
+export async function openTextFileDialog(filters: FileFilter[]): Promise<{ name: string; path: string; text: string } | null> {
   if (!isTauriRuntime()) return null;
   const selected = await open({ multiple: false, directory: false, filters });
   if (!selected || Array.isArray(selected)) return null;
   const text = await readTextFile(selected);
-  return { name: fileNameFromPath(selected), text };
+  return { name: fileNameFromPath(selected), path: selected, text };
 }
 
 export { isTauriRuntime };

@@ -90,7 +90,9 @@ interface TopBarProps {
   onReset: () => void;
   onZoom: (z: number) => void;
   onPage: (p: number) => void;
-  onExport: (format: "pdf" | "png" | "jpg") => void;
+  onSavePdf: () => void;
+  onSavePdfAs: () => void;
+  onExportImage: (format: "png" | "jpg") => void;
   onUndo: () => void;
   onRedo: () => void;
   onSaveProject: () => void;
@@ -115,7 +117,9 @@ export function TopBar({
   onReset,
   onZoom,
   onPage,
-  onExport,
+  onSavePdf,
+  onSavePdfAs,
+  onExportImage,
   onUndo,
   onRedo,
   onSaveProject,
@@ -190,13 +194,16 @@ export function TopBar({
         <button className="btn-ghost" onClick={onSaveProject} disabled={numPages === 0} title="Save edits + PDF as a reopenable project file">
           Save project
         </button>
-        <button className="btn-primary" onClick={() => onExport("pdf")} disabled={numPages === 0}>
+        <button className="btn-primary" onClick={onSavePdf} disabled={numPages === 0} title="Save (reuses the last location this session, or asks like Save As if none yet)">
           Save PDF
         </button>
-        <button className="btn-ghost" onClick={() => onExport("png")} disabled={numPages === 0}>
+        <button className="btn-ghost" onClick={onSavePdfAs} disabled={numPages === 0} title="Always asks where to save">
+          Save As…
+        </button>
+        <button className="btn-ghost" onClick={() => onExportImage("png")} disabled={numPages === 0}>
           PNG
         </button>
-        <button className="btn-ghost" onClick={() => onExport("jpg")} disabled={numPages === 0}>
+        <button className="btn-ghost" onClick={() => onExportImage("jpg")} disabled={numPages === 0}>
           JPG
         </button>
       </div>
