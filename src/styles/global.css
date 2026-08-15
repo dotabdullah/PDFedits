@@ -1,28 +1,30 @@
 :root {
   /* Color */
-  --ink-900: #14171f;
-  --ink-800: #1c202b;
-  --ink-700: #262b38;
-  --paper-100: #faf7f1;
-  --paper-200: #f0ebe0;
-  --line-350: #c9c2b4;
-  --accent-amber: #d98936;
-  --accent-amber-dim: #b9741f;
-  --danger: #c1443b;
-  --text-on-ink: #efe9dc;
-  --text-on-ink-dim: #8b8f9c;
-  --text-on-paper: #22262f;
+  --bg-canvas: #eef0f4;
+  --bg-panel: #ffffff;
+  --border: #e3e6ec;
+  --border-strong: #d3d8e2;
+  --text-primary: #171b24;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9aa1b0;
+  --accent-blue: #2f6fed;
+  --accent-blue-soft: #eaf1fe;
+  --accent-blue-strong: #1d55c9;
+  --danger: #dc3b33;
+  --danger-soft: #fdeceb;
+  --paper-100: #ffffff;
 
   /* Type */
-  --font-display: "Fraunces", Georgia, serif;
   --font-ui: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
   /* Layout */
-  --rail-width: 64px;
-  --panel-width: 280px;
-  --topbar-height: 52px;
-  --radius-sm: 4px;
+  --pages-width: 220px;
+  --properties-width: 280px;
+  --header-height: 48px;
+  --tools-height: 44px;
+  --status-height: 30px;
+  --radius-sm: 5px;
   --radius-md: 8px;
 }
 
@@ -39,8 +41,8 @@ body,
 
 body {
   font-family: var(--font-ui);
-  background: var(--ink-900);
-  color: var(--text-on-ink);
+  background: var(--bg-panel);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -49,8 +51,8 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent-amber);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -65,24 +67,23 @@ button {
 .app-shell {
   position: relative;
   display: grid;
-  grid-template-columns: var(--rail-width) 1fr var(--panel-width);
-  grid-template-rows: var(--topbar-height) 1fr;
+  grid-template-columns: var(--pages-width) 1fr var(--properties-width);
+  grid-template-rows: var(--header-height) var(--tools-height) 1fr var(--status-height);
   grid-template-areas:
-    "rail topbar panel"
-    "rail canvas panel";
+    "header header header"
+    "tools  tools  tools"
+    "pages  canvas properties"
+    "status status status";
   height: 100vh;
   width: 100vw;
   overflow: hidden;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .app-shell {
-    grid-template-columns: var(--rail-width) 1fr;
-    grid-template-areas:
-      "rail topbar"
-      "rail canvas";
+    grid-template-columns: 0px 1fr var(--properties-width);
   }
-  .side-panel {
+  .pages-panel {
     display: none;
   }
 }

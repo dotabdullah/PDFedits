@@ -1,61 +1,75 @@
-# PDFedits — Offline PDF Editor
+# PDFedits Studio — Offline PDF Editor
 
-**Current version: v0.1.4** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+**Current version: v0.2.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
 
-Free, offline, desktop PDF editor. Tauri + React + TypeScript frontend, `pdf.js` for rendering and reading existing text, `pdf-lib` for writing edits back into the PDF.
+Free, offline, desktop PDF editor. Tauri + React + TypeScript frontend, `pdf.js` for rendering and reading existing text, `pdf-lib` for writing edits back into the PDF, `lucide-react` for icons.
 
-## What it does
+## What's free (Phase 1) vs. premium (Phase 2)
 
-- Open a PDF, view/scroll/zoom pages, jump between pages via a thumbnail strip
-- **Edit existing PDF text in place** — click any text on the page (Select tool) and retype it; drag the width handle to force one line or let it wrap to 2–3; font family, bold, and italic are auto-detected from the original text and can be corrected in the properties panel if the guess is off
-- Add new text boxes (font size, family, bold/italic, color) — click to place, click to edit
-- Add images (PNG/JPG) — click to place, drag to reposition, resize via the corner handle or the width/height fields in the properties panel
-- Add a hand-drawn e-signature (canvas pad) — click to place, drag/resize the same as images
-- **Every placed element** (text, image, signature, erase patch) is selectable and shows its properties on the right — click it any time, in any tool, to reselect it. A **hand cursor** (grab/grabbing) shows what's draggable.
-- **Erase tool** — click your own added text/image/signature to delete it outright; click over original PDF content to patch it with an opaque rectangle. Width and thickness are adjustable while the tool is active.
-- **Reset edits** — clears every edit on the current PDF back to the original, in one click (with a confirmation)
-- **Close** — closes the current PDF (prompts if you have unsaved edits)
+Everything in this repo is **Phase 1 — free for everyone**. A handful of more advanced features are intentionally *not* built yet and are earmarked for a future **Phase 2 premium tier**, either because they need real engineering to do safely (see the specific reasons below) or because they're a natural place to draw a free/paid line:
+
+| Feature | Phase | Why |
+|---|---|---|
+| View, edit existing text, add text/image/signature, shapes, erase, undo/redo, search, page delete | **1 — Free** | Core editing, ships now |
+| True redaction (removes text from the PDF itself) | 2 — Premium | Current erase is a *visual* patch only — see "Known limitations" |
+| Page rotation | 2 — Premium | Needs coordinate remapping so existing edits on that page don't shift; shipping it without that would silently misplace people's edits |
+| Crop tool | 2 — Premium | New tool surface + mediabox trimming |
+| Freehand pencil annotation | 2 — Premium | Path capture/rendering is a bigger scope than the click-drag shape tools |
+| Original-PDF-font embedding | 2 — Premium | Needs per-glyph fallback logic to be safe — see "On font matching" below |
+| Multi-select / copy-paste / duplicate | 2 — Premium | |
+| PDF merge/split, watermarking, password protection | 2 — Premium | |
+
+## What it does (Phase 1)
+
+- Open a PDF, view/scroll/zoom/pan pages, jump between pages via the **Pages panel** on the left (with thumbnails and page count)
+- **Edit existing PDF text in place** — click any text (Select tool) and retype it; drag the width handle to force one line or let it wrap; font family, bold, and italic are auto-detected from the original text and correctable in the Properties panel
+- Add new text boxes, images (PNG/JPG), and hand-drawn e-signatures — click to place, drag to reposition/resize
+- **Draw shapes** — Rectangle, Ellipse, Line — click-drag to size, with stroke color/width and optional fill
+- **Pan tool** — drag to scroll around a zoomed page
+- **Erase tool** — click your own added element to delete it outright; click over original PDF content to patch it with an opaque rectangle. Width/thickness adjustable while active.
+- **Find in document** — search text across all pages, click a result to jump to that page
+- **Delete a page** from the Pages panel (edits on later pages automatically shift down to stay aligned)
+- **Reset edits**, **Close** (with unsaved-changes confirmation), **Fullscreen** toggle
 - Undo/redo (Ctrl+Z / Ctrl+Shift+Z) for add/delete/text-edit actions
-- Keyboard shortcuts: `V` select, `T` text, `I` image, `S` signature, `E` erase, `Delete` removes the selected element, `Esc` deselects
-- Drag-and-drop a PDF (or a saved project) straight onto the window to open it
-- **Save vs. Save As** — "Save" reuses the location from your last save this session; "Save As…" always prompts and remembers the new location for next time. Applies to both the edited PDF and the project file.
-- **Save/open project (`.pdfedits`)** — bundles the original PDF + all your edits into one file, using native OS save/open dialogs, so you can close the app and resume editing later
-- Export as: edited PDF (all pages, all edits flattened), or PNG/JPG (current page)
+- Keyboard shortcuts: `V` select, `H` pan, `T` text, `I` image, `S` signature, `R` rectangle, `O` ellipse, `L` line, `E` erase, `Ctrl+O` open, `Ctrl+F` search, `Delete` removes selection, `Esc` deselects/closes search
+- Drag-and-drop a PDF (or a saved project) onto the window to open it
+- **Save vs. Save As** — Save reuses the location from your last save this session; Save As always prompts and remembers the new location. Same for the project file.
+- **Save/open project (`.pdfedits`)** — bundles the PDF + all edits into one file for resuming later
+- Export as edited PDF, or PNG/JPG (current page)
 
 ## How editing existing text works
 
-pdf.js exposes each run of real text on a page (string, position, and an internal font identifier that usually still carries the subset tag + real font name, e.g. `g_d0_f1+ArialMT-Bold`). The app uses that to place an invisible click target over every text run. Click one and it becomes directly editable, with a drag handle on the right edge to control line width; on blur, if you changed it, the app:
+pdf.js exposes each run of real text on a page (string, position, and an internal font identifier that usually still carries the subset tag + real font name, e.g. `g_d0_f1+ArialMT-Bold`). The app places an invisible click target over every text run; click one and it becomes directly editable, with a drag handle to control line width. On blur, if changed, the app samples the background color next to that text, patches over the original run's bounding box, and draws the new text in the same spot using an embedded standard font whose family/weight/style is guessed from that font identifier.
 
-1. Samples the page's background color right next to that text, so the patch blends in
-2. Draws an opaque patch over the original run's bounding box (at the width you left it)
-3. Draws your new text in the same position, using an embedded standard font whose family/weight/style (serif vs. sans vs. mono, bold, italic) is guessed from that font identifier
+This mirrors how lightweight PDF editors handle text edits — patch-and-replace, rather than rewriting the PDF's internal content stream, which is fragile across the huge variety of PDF producers.
 
-This mirrors how lightweight PDF editors like PDFaid handle text edits — patch-and-replace, rather than rewriting the PDF's internal content stream (fragile across the huge variety of PDF producers, and would need a full content-stream + embedded-font-program parser to do reliably).
-
-**On font matching:** the app does not extract and re-embed the PDF's actual embedded font program — only 12 standard PDF fonts (Helvetica/Times/Courier × regular/bold/italic/bold-italic) are used as replacements. This was investigated and deliberately not built, for a concrete reason: PDF producers almost always **subset** embedded fonts, meaning the embedded font file only contains the glyphs actually used in the original document. If we extracted and re-embedded that exact font, typing any character that wasn't already present somewhere in the original PDF (a digit, a punctuation mark, a whole new word) would either fail to render or crash the export. A robust fix needs per-character fallback logic (use the real font when it has the glyph, fall back to a standard font when it doesn't), which is real engineering, not a quick patch — it's on the roadmap below rather than shipped half-working. In the meantime, family/bold/italic are auto-detected from the original text's font name and are usually right for body text; when they're not, click the edited text and correct them from the properties panel on the right.
+**On font matching:** only 12 standard PDF fonts (Helvetica/Times/Courier × regular/bold/italic/bold-italic) are used — not the document's actual embedded font. This is deliberate: PDF producers almost always **subset** embedded fonts (the font file only contains glyphs actually used in the document), so re-embedding the exact original font would fail or crash on any new character you type that wasn't already in the original text. A correct fix needs per-character fallback logic (real font when it has the glyph, standard font when it doesn't) — real engineering, which is why it's a Phase 2 item rather than shipped half-working. Family/bold/italic are auto-detected and usually right for body text; correct them in the Properties panel when they're not.
 
 ## Project structure
 
 ```
 pdf-editor/
-├── src/                     # React frontend
+├── src/
 │   ├── components/
-│   │   ├── Toolbar.tsx      # icon rail + top bar (open/close/undo/reset/zoom/save+save-as + erase size controls)
-│   │   ├── PdfCanvas.tsx    # pdf.js render + overlay elements + resize handles + existing-text edit layer + page gauge
-│   │   ├── ThumbnailStrip.tsx
-│   │   ├── SidePanel.tsx    # contextual properties (font, bold/italic, color, position, size)
+│   │   ├── Toolbar.tsx        # HeaderBar (row 1: file actions, search, settings) + ToolsBar (row 2: tools, page nav, zoom)
+│   │   ├── PdfCanvas.tsx      # pdf.js render + overlay elements + resize handles + pan + shape drawing + existing-text edit layer
+│   │   ├── PagesPanel.tsx     # persistent left Pages panel (thumbnails, delete)
+│   │   ├── SidePanel.tsx      # Properties panel (doc info empty state, per-element properties)
+│   │   ├── StatusBar.tsx      # bottom status bar
+│   │   ├── AboutModal.tsx     # settings/about
+│   │   ├── SearchPanel.tsx    # find-in-document dropdown
 │   │   └── SignaturePad.tsx
 │   ├── lib/
-│   │   ├── pdfEngine.ts     # render, text/font extraction, flatten/export (pdf-lib), base64 helpers
-│   │   ├── nativeIO.ts      # Tauri dialog + fs wrappers (Save vs Save As, native open), browser-download fallback
+│   │   ├── pdfEngine.ts       # render, text/font extraction, search, flatten/export, page delete, base64 helpers
+│   │   ├── nativeIO.ts        # Tauri dialog + fs wrappers (Save vs Save As), browser-download fallback
 │   │   └── types.ts
-│   ├── styles/global.css    # design tokens
-│   └── App.tsx              # state, undo/redo history, shortcuts, drag-drop, project save/load
-├── src-tauri/                # Rust shell (Tauri v2)
+│   ├── styles/global.css      # light "Studio" design tokens
+│   └── App.tsx
+├── src-tauri/
 │   ├── src/main.rs
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
-│   └── capabilities/default.json   # grants the dialog + fs permissions the app needs (broad scope — see below)
+│   └── capabilities/default.json   # dialog + fs permissions (broad scope — single-user offline desktop app)
 └── package.json
 ```
 
@@ -90,23 +104,25 @@ npx tauri icon path/to/your-logo.png
 
 ### About project save/open reliability
 
-Save and open both go through Tauri's native dialog + filesystem plugins (`@tauri-apps/plugin-dialog`, `@tauri-apps/plugin-fs`) rather than browser-style downloads, which don't work reliably inside a Tauri webview. This requires `src-tauri/capabilities/default.json` to grant the right permissions — as of 0.1.4 that scope is intentionally broad (`**`, meaning "anywhere"), after narrower per-folder scoping turned out to be the likely cause of "Couldn't open project file" errors on files saved outside Documents/Downloads/Home. If a save or open ever fails now, the error dialog shows the actual underlying error message (not a generic one), which makes it possible to diagnose if something's still wrong.
+Save and open both go through Tauri's native dialog + filesystem plugins rather than browser-style downloads, which don't work reliably inside a Tauri webview. `src-tauri/capabilities/default.json` grants broad (`**`) fs scope — appropriate for a single-user offline desktop app, and specifically to avoid "Couldn't open project file" errors on files saved outside a couple of default OS folders. If a save or open ever fails, the error dialog shows the actual underlying error message.
 
-Running via plain `npm run dev` (no Rust shell) falls back to the old browser download for save, and "Open project"/"Open PDF" fall back to a standard `<input type="file">` picker — fine for UI iteration, but use `npm run tauri dev` for the real Save/Save As/Open behavior described above.
+Running via plain `npm run dev` (no Rust shell) falls back to browser download for save, and Open falls back to a standard `<input type="file">` picker — fine for UI iteration, but use `npm run tauri dev` for the real behavior described above.
 
-## Known limitations (by design, not bugs)
+## Known limitations (Phase 1, by design)
 
-- Dragging/resizing an element isn't tracked in undo history (only add/delete/text-edit are) — flooding the history stack on every mouse-move wasn't worth it for v1
-- Replacement text uses the 12 standard PDF fonts, not the document's original embedded font program (see "On font matching" above)
-- Text color on edited existing text defaults to near-black; pdf.js's text layer doesn't reliably expose the original fill color
+- The erase tool is **visual only** — it draws an opaque patch over content, it does not remove the underlying text from the PDF's internal structure, so the original text is technically still extractable by someone who goes looking. True redaction is a Phase 2 item; don't rely on erase for legally sensitive redaction (SSNs, medical records, etc.) yet.
+- Dragging/resizing an element isn't tracked in undo history (only add/delete/text-edit are)
+- Replacement text for edited existing text uses the 12 standard PDF fonts, not the document's original embedded font (see "On font matching" above)
 - Background-color sampling for patches is a single-pixel sample, so it can miss gradients or busy backgrounds
-- The erase tool's "click to delete your own element" hit-tests the topmost element at that point — if two of your elements overlap, it deletes whichever is on top (most recently added)
+- The erase tool's "click to delete your own element" hit-tests the topmost element at that point
+- Page rotation isn't available yet (see Phase 2 table above for why)
 
 ## Roadmap
 
-- Multi-select, copy/paste, and duplicate for overlay elements
-- Page thumbnail drag-to-reorder / delete / rotate pages
-- Custom font embedding (load a .ttf via pdf-lib's `embedFont` + fontkit) for closer visual matches, and — as a stretch goal — extracting/re-embedding the PDF's actual font program for exact matches
-- Track drag/resize in undo history with debounced snapshots instead of per-move
-- PDF merge/split, watermarking, password protection
-- Error boundary around the editor so a future unexpected crash shows a recoverable error screen instead of a blank white window
+**Phase 2 (premium)** — see the table at the top for the full list and reasoning: true redaction, page rotation, crop tool, freehand pencil, original-font embedding, multi-select/copy-paste, PDF merge/split, watermarking, password protection.
+
+**Possible free additions post-0.2.0:**
+- Page reorder (drag thumbnails) and page rotate that's safe for existing edits
+- Track drag/resize in undo history with debounced snapshots
+- Error boundary around the editor so an unexpected crash shows a recoverable screen instead of a blank window
+- Highlight tool (semi-transparent, distinct from opaque erase)

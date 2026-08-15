@@ -1,7 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
 import { PDFDocument, rgb, StandardFonts, PDFFont } from "pdf-lib";
-import type { EditorElement, ExistingTextItem, PageSize } from "./types";
+import type { EditorElement, ExistingTextItem, PageSize, SearchMatch } from "./types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -101,6 +101,34 @@ export async function flattenToPdf(
         width: el.width / renderScale,
         height: el.height / renderScale,
       });
+    } else if (el.kind === "rectangle") {
+      page.drawRectangle({
+        x: toPdfX(el.x),
+        y: toPdfY(el.y, el.height),
+        width: el.width / renderScale,
+        height: el.height / renderScale,
+        borderColor: rgb(...hexToRgb(el.strokeColor)),
+        borderWidth: el.strokeWidth,
+        color: el.fillColor ? rgb(...hexToRgb(el.fillColor)) : undefined,
+      });
+    } else if (el.kind === "ellipse") {
+      page.drawEllipse({
+        x: toPdfX(el.x) + el.width / renderScale / 2,
+        y: toPdfY(el.y, el.height) + el.height / renderScale / 2,
+        xScale: el.width / renderScale / 2,
+        yScale: el.height / renderScale / 2,
+        borderColor: rgb(...hexToRgb(el.strokeColor)),
+        borderWidth: el.strokeWidth,
+        color: el.fillColor ? rgb(...hexToRgb(el.fillColor)) : undefined,
+      });
+    } else if (el.kind === "line") {
+      const x1 = toPdfX(el.x);
+      const x2 = toPdfX(el.x + el.width);
+      const yTop = toPdfY(el.y, 0);
+      const yBottom = toPdfY(el.y + el.height, 0);
+      const start = el.descending ? { x: x1, y: yTop } : { x: x1, y: yBottom };
+      const end = el.descending ? { x: x2, y: yBottom } : { x: x2, y: yTop };
+      page.drawLine({ start, end, thickness: el.strokeWidth, color: rgb(...hexToRgb(el.strokeColor)) });
     }
   }
 
@@ -197,6 +225,42 @@ export function canvasToImageBytes(canvas: HTMLCanvasElement, type: "png" | "jpg
       0.95
     );
   });
+}
+
+/**
+ * Basic in-document search: scans every page's text layer for a case-insensitive
+ * match and returns each hit's position (in screen px at the given scale) plus
+ * a short snippet, so the UI can list results and jump/highlight on click.
+ */
+export async function searchDocument(
+  pdfDoc: pdfjsLib.PDFDocumentProxy,
+  query: string,
+  scale: number
+): Promise<SearchMatch[]> {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const matches: SearchMatch[] = [];
+
+  for (let pageIndex = 0; pageIndex < pdfDoc.numPages; pageIndex++) {
+    const items = await extractTextItems(pdfDoc, pageIndex, scale);
+    for (const item of items) {
+      const lower = item.text.toLowerCase();
+      if (!lower.includes(needle)) continue;
+      const start = Math.max(0, lower.indexOf(needle) - 20);
+      const end = Math.min(item.text.length, lower.indexOf(needle) + needle.length + 20);
+      const snippet = `${start > 0 ? "…" : ""}${item.text.slice(start, end)}${end < item.text.length ? "…" : ""}`;
+      matches.push({ page: pageIndex, snippet, x: item.x, y: item.y, width: item.width, height: item.height });
+    }
+  }
+
+  return matches;
+}
+
+/** Removes one page (0-indexed) from a PDF and returns the new bytes. Used by the Pages panel's delete action. */
+export async function deletePageFromPdf(bytes: Uint8Array, pageIndex: number): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(bytes);
+  pdfDoc.removePage(pageIndex);
+  return pdfDoc.save();
 }
 
 function hexToRgb(hex: string): [number, number, number] {

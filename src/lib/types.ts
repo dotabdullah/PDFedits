@@ -1,4 +1,4 @@
-export type ToolId = "select" | "text" | "image" | "signature" | "erase";
+export type ToolId = "select" | "pan" | "text" | "image" | "signature" | "rectangle" | "ellipse" | "line" | "erase";
 
 export interface BaseElement {
   id: string;
@@ -34,7 +34,36 @@ export interface EraseElement extends BaseElement {
   color: string; // patch color, typically page background sample
 }
 
-export type EditorElement = TextElement | ImageElement | SignatureElement | EraseElement;
+export interface RectangleElement extends BaseElement {
+  kind: "rectangle";
+  strokeColor: string;
+  strokeWidth: number;
+  fillColor: string | null; // null = no fill, outline only
+}
+
+export interface EllipseElement extends BaseElement {
+  kind: "ellipse";
+  strokeColor: string;
+  strokeWidth: number;
+  fillColor: string | null;
+}
+
+export interface LineElement extends BaseElement {
+  kind: "line";
+  strokeColor: string;
+  strokeWidth: number;
+  /** true: line runs top-left→bottom-right of its bbox; false: bottom-left→top-right. Lets a non-negative bbox still represent either diagonal. */
+  descending: boolean;
+}
+
+export type EditorElement =
+  | TextElement
+  | ImageElement
+  | SignatureElement
+  | EraseElement
+  | RectangleElement
+  | EllipseElement
+  | LineElement;
 
 export interface PageSize {
   width: number;
@@ -54,6 +83,16 @@ export interface ExistingTextItem {
   fontFamily: "sans" | "serif" | "mono";
   bold: boolean;
   italic: boolean;
+}
+
+/** A text match from in-document search. */
+export interface SearchMatch {
+  page: number;
+  snippet: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /** Serialized session: original PDF bytes + all edits, reopenable later. */

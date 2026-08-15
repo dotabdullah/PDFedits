@@ -27,7 +27,7 @@ export function SignaturePad({ onConfirm, onClose }: Props) {
     const y = e.clientY - rect.top;
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#14171f";
+    ctx.strokeStyle = "#171b24";
     ctx.lineTo(x, y);
     ctx.stroke();
     ctx.beginPath();
@@ -63,14 +63,14 @@ export function SignaturePad({ onConfirm, onClose }: Props) {
           onPointerMove={draw}
         />
         <div className="sig-actions">
-          <button className="btn-ghost" onClick={clear}>
+          <button className="sig-btn-ghost" onClick={clear}>
             Clear
           </button>
           <div className="sig-actions-right">
-            <button className="btn-ghost" onClick={onClose}>
+            <button className="sig-btn-ghost" onClick={onClose}>
               Cancel
             </button>
-            <button className="btn-primary" onClick={confirm} disabled={empty}>
+            <button className="sig-btn-primary" onClick={confirm} disabled={empty}>
               Use signature
             </button>
           </div>
@@ -78,23 +78,44 @@ export function SignaturePad({ onConfirm, onClose }: Props) {
       </div>
       <style>{`
         .sig-backdrop {
-          position: fixed; inset: 0; background: rgba(20,23,31,0.7);
+          position: fixed; inset: 0; background: rgba(15,23,42,0.35);
           display: flex; align-items: center; justify-content: center; z-index: 50;
         }
         .sig-modal {
-          background: var(--paper-100); border-radius: var(--radius-md);
-          padding: 24px; width: 520px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+          background: var(--bg-panel); border-radius: var(--radius-md);
+          padding: 22px; width: 520px; box-shadow: 0 20px 50px rgba(15,23,42,0.25);
+          border: 1px solid var(--border);
         }
         .sig-modal h3 {
-          font-family: var(--font-display); color: var(--text-on-paper);
-          margin: 0 0 14px; font-size: 18px;
+          color: var(--text-primary);
+          margin: 0 0 14px; font-size: 15px; font-weight: 700;
         }
         .sig-canvas {
-          width: 100%; background: #fff; border: 1px dashed var(--line-350);
+          width: 100%; background: #fff; border: 1px dashed var(--border-strong);
           border-radius: var(--radius-sm); touch-action: none; cursor: crosshair;
         }
         .sig-actions { display: flex; justify-content: space-between; margin-top: 16px; }
         .sig-actions-right { display: flex; gap: 8px; }
+        .sig-btn-ghost, .sig-btn-primary {
+          font-size: 13px;
+          font-weight: 600;
+          border-radius: var(--radius-sm);
+          padding: 8px 16px;
+          cursor: pointer;
+        }
+        .sig-btn-ghost {
+          background: transparent;
+          border: 1px solid var(--border);
+          color: var(--text-primary);
+        }
+        .sig-btn-ghost:hover { background: var(--bg-canvas); }
+        .sig-btn-primary {
+          background: var(--accent-blue);
+          border: none;
+          color: #fff;
+        }
+        .sig-btn-primary:hover:not(:disabled) { background: var(--accent-blue-strong); }
+        .sig-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
     </div>
   );

@@ -1,302 +1,393 @@
-import { ToolId } from "../lib/types";
+import {
+  FolderOpen,
+  Save,
+  FileDown,
+  Undo2,
+  Redo2,
+  Search,
+  Settings,
+  MousePointer2,
+  Hand,
+  Type,
+  Image as ImageIcon,
+  PenTool,
+  Square,
+  Circle,
+  Minus,
+  Eraser,
+  ChevronLeft,
+  ChevronRight,
+  ZoomOut,
+  ZoomIn,
+  Maximize,
+  Minimize,
+  RotateCcw,
+  XCircle,
+} from "lucide-react";
+import type { ToolId } from "../lib/types";
 
-const TOOLS: { id: ToolId; label: string; glyph: string }[] = [
-  { id: "select", label: "Select / edit text (V)", glyph: "↖" },
-  { id: "text", label: "Add text (T)", glyph: "T" },
-  { id: "image", label: "Add image (I)", glyph: "▣" },
-  { id: "signature", label: "Signature (S)", glyph: "✎" },
-  { id: "erase", label: "Erase (E)", glyph: "▢" },
-];
-
-interface RailProps {
-  activeTool: ToolId;
-  onSelectTool: (t: ToolId) => void;
-}
-
-export function ToolRail({ activeTool, onSelectTool }: RailProps) {
-  return (
-    <nav className="tool-rail" aria-label="Editing tools">
-      <div className="rail-mark">Pe</div>
-      {TOOLS.map((t) => (
-        <button
-          key={t.id}
-          className={`rail-btn ${activeTool === t.id ? "is-active" : ""}`}
-          onClick={() => onSelectTool(t.id)}
-          title={t.label}
-          aria-pressed={activeTool === t.id}
-        >
-          <span aria-hidden="true">{t.glyph}</span>
-        </button>
-      ))}
-      <style>{`
-        .tool-rail {
-          grid-area: rail;
-          background: var(--ink-900);
-          border-right: 1px solid var(--ink-700);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 12px 0;
-          gap: 6px;
-        }
-        .rail-mark {
-          font-family: var(--font-display);
-          font-size: 20px;
-          color: var(--accent-amber);
-          margin-bottom: 14px;
-        }
-        .rail-btn {
-          width: 40px;
-          height: 40px;
-          border-radius: var(--radius-md);
-          border: none;
-          background: transparent;
-          color: var(--text-on-ink-dim);
-          font-size: 16px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: background 120ms ease, color 120ms ease;
-        }
-        .rail-btn:hover {
-          background: var(--ink-700);
-          color: var(--text-on-ink);
-        }
-        .rail-btn.is-active {
-          background: var(--accent-amber);
-          color: var(--ink-900);
-        }
-      `}</style>
-    </nav>
-  );
-}
-
-interface TopBarProps {
+interface HeaderBarProps {
   fileName: string | null;
-  zoom: number;
-  currentPage: number;
   numPages: number;
   canUndo: boolean;
   canRedo: boolean;
-  canReset: boolean;
-  activeTool: ToolId;
-  eraseWidth: number;
-  eraseThickness: number;
-  onEraseWidthChange: (w: number) => void;
-  onEraseThicknessChange: (h: number) => void;
   onOpen: () => void;
+  onOpenProject: () => void;
   onClose: () => void;
-  onReset: () => void;
-  onZoom: (z: number) => void;
-  onPage: (p: number) => void;
   onSavePdf: () => void;
   onSavePdfAs: () => void;
-  onExportImage: (format: "png" | "jpg") => void;
+  onSaveProject: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onSaveProject: () => void;
-  onOpenProject: () => void;
+  onToggleSearch: () => void;
+  onToggleSettings: () => void;
 }
 
-export function TopBar({
+export function HeaderBar({
   fileName,
-  zoom,
-  currentPage,
   numPages,
   canUndo,
   canRedo,
-  canReset,
-  activeTool,
-  eraseWidth,
-  eraseThickness,
-  onEraseWidthChange,
-  onEraseThicknessChange,
   onOpen,
+  onOpenProject,
   onClose,
-  onReset,
-  onZoom,
-  onPage,
   onSavePdf,
   onSavePdfAs,
-  onExportImage,
+  onSaveProject,
   onUndo,
   onRedo,
-  onSaveProject,
-  onOpenProject,
-}: TopBarProps) {
+  onToggleSearch,
+  onToggleSettings,
+}: HeaderBarProps) {
   return (
-    <header className="top-bar">
-      <div className="top-bar-left">
-        <button className="btn-ghost" onClick={onOpen}>
-          Open PDF
-        </button>
-        <button className="btn-ghost" onClick={onOpenProject} title="Open a saved .pdfedits project">
-          Open project
-        </button>
-        {numPages > 0 && (
-          <button className="btn-ghost" onClick={onClose} title="Close this PDF">
-            Close
-          </button>
-        )}
-        <span className="file-name">{fileName ?? "No file open"}</span>
+    <header className="header-bar">
+      <div className="brand">
+        <div className="brand-mark">
+          <FolderOpen size={16} strokeWidth={2} />
+        </div>
+        <div className="brand-text">
+          <span className="brand-name">PDFedits</span>
+          <span className="brand-sub">Studio</span>
+        </div>
       </div>
 
-      {numPages > 0 && activeTool !== "erase" && (
-        <div className="top-bar-center">
-          <button className="btn-ghost sm" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
-            ↶
+      <div className="header-actions">
+        <button className="hbtn" onClick={onOpen} title="Open a PDF (Ctrl+O)">
+          <FolderOpen size={15} /> Open
+        </button>
+        <button className="hbtn" onClick={onOpenProject} title="Open a saved .pdfedits project">
+          <FolderOpen size={15} /> Open Project
+        </button>
+        {numPages > 0 && (
+          <button className="hbtn" onClick={onClose} title="Close this PDF">
+            <XCircle size={15} /> Close
           </button>
-          <button className="btn-ghost sm" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
-            ↷
-          </button>
-          <span className="divider" />
-          <button className="btn-ghost sm" onClick={() => onPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0}>
-            ←
-          </button>
-          <span className="page-indicator">
-            {currentPage + 1} / {numPages}
-          </span>
-          <button className="btn-ghost sm" onClick={() => onPage(Math.min(numPages - 1, currentPage + 1))} disabled={currentPage === numPages - 1}>
-            →
-          </button>
-          <span className="divider" />
-          <button className="btn-ghost sm" onClick={() => onZoom(Math.max(0.5, zoom - 0.1))}>
-            −
-          </button>
-          <span className="zoom-indicator">{Math.round(zoom * 100)}%</span>
-          <button className="btn-ghost sm" onClick={() => onZoom(Math.min(2.5, zoom + 0.1))}>
-            +
-          </button>
-        </div>
-      )}
+        )}
+        <span className="hdivider" />
+        <button className="hbtn" onClick={onSavePdf} disabled={numPages === 0} title="Save (reuses last location, or Save As if none yet)">
+          <Save size={15} /> Save
+        </button>
+        <button className="hbtn" onClick={onSavePdfAs} disabled={numPages === 0} title="Always asks where to save">
+          <FileDown size={15} /> Save As
+        </button>
+        <button className="hbtn" onClick={onSaveProject} disabled={numPages === 0} title="Save edits + PDF as a reopenable project file">
+          <Save size={15} /> Save Project
+        </button>
+        <span className="hdivider" />
+        <button className="hbtn icon-only" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+          <Undo2 size={16} />
+        </button>
+        <button className="hbtn icon-only" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+          <Redo2 size={16} />
+        </button>
+      </div>
 
-      {numPages > 0 && activeTool === "erase" && (
-        <div className="top-bar-center erase-controls">
-          <label className="erase-slider">
-            <span>Width</span>
-            <input type="range" min={20} max={400} value={eraseWidth} onChange={(e) => onEraseWidthChange(Number(e.target.value))} />
-            <span className="erase-value">{eraseWidth}px</span>
-          </label>
-          <label className="erase-slider">
-            <span>Thickness</span>
-            <input type="range" min={8} max={80} value={eraseThickness} onChange={(e) => onEraseThicknessChange(Number(e.target.value))} />
-            <span className="erase-value">{eraseThickness}px</span>
-          </label>
-          <span className="erase-hint">Click your own text/image/signature to delete it — click PDF content to patch it</span>
-        </div>
-      )}
+      <div className="header-status">{fileName ?? "No document open"}</div>
 
-      <div className="top-bar-right">
-        <button className="btn-ghost" onClick={onReset} disabled={!canReset} title="Remove every edit made on this PDF">
-          Reset edits
+      <div className="header-right">
+        <button className="hicon" onClick={onToggleSearch} title="Find in document" disabled={numPages === 0}>
+          <Search size={16} />
         </button>
-        <button className="btn-ghost" onClick={onSaveProject} disabled={numPages === 0} title="Save edits + PDF as a reopenable project file">
-          Save project
-        </button>
-        <button className="btn-primary" onClick={onSavePdf} disabled={numPages === 0} title="Save (reuses the last location this session, or asks like Save As if none yet)">
-          Save PDF
-        </button>
-        <button className="btn-ghost" onClick={onSavePdfAs} disabled={numPages === 0} title="Always asks where to save">
-          Save As…
-        </button>
-        <button className="btn-ghost" onClick={() => onExportImage("png")} disabled={numPages === 0}>
-          PNG
-        </button>
-        <button className="btn-ghost" onClick={() => onExportImage("jpg")} disabled={numPages === 0}>
-          JPG
+        <button className="hicon" onClick={onToggleSettings} title="Settings & about">
+          <Settings size={16} />
         </button>
       </div>
 
       <style>{`
-        .top-bar {
-          grid-area: topbar;
-          background: var(--ink-900);
-          border-bottom: 1px solid var(--ink-700);
+        .header-bar {
+          grid-area: header;
+          background: var(--bg-panel);
+          border-bottom: 1px solid var(--border);
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 0 16px;
-          gap: 16px;
+          gap: 18px;
+          padding: 0 14px;
         }
-        .top-bar-left, .top-bar-center, .top-bar-right {
+        .brand {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
         }
-        .file-name {
-          font-family: var(--font-mono);
+        .brand-mark {
+          width: 26px;
+          height: 26px;
+          border-radius: 6px;
+          background: var(--accent-blue-soft);
+          color: var(--accent-blue);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .brand-text {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.05;
+        }
+        .brand-name {
+          font-size: 14px;
+          font-weight: 800;
+          color: var(--text-primary);
+        }
+        .brand-sub {
+          font-size: 10px;
+          color: var(--text-tertiary);
+          font-weight: 600;
+          letter-spacing: 0.03em;
+        }
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .hbtn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: transparent;
+          border: none;
+          color: var(--text-primary);
+          font-size: 12.5px;
+          font-weight: 500;
+          padding: 6px 9px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+        }
+        .hbtn:hover:not(:disabled) { background: var(--bg-canvas); }
+        .hbtn:disabled { color: var(--text-tertiary); cursor: not-allowed; }
+        .hbtn.icon-only { padding: 6px; }
+        .hdivider {
+          width: 1px;
+          height: 18px;
+          background: var(--border);
+          margin: 0 4px;
+        }
+        .header-status {
+          flex: 1;
+          text-align: center;
           font-size: 12px;
-          color: var(--text-on-ink-dim);
-          max-width: 240px;
+          color: var(--text-tertiary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
-        .page-indicator, .zoom-indicator {
-          font-family: var(--font-mono);
-          font-size: 12px;
-          color: var(--text-on-ink-dim);
-          min-width: 52px;
-          text-align: center;
+        .header-right {
+          display: flex;
+          align-items: center;
+          gap: 4px;
         }
-        .divider {
+        .hicon {
+          background: transparent;
+          border: none;
+          color: var(--text-secondary);
+          padding: 7px;
+          border-radius: var(--radius-sm);
+          display: flex;
+          cursor: pointer;
+        }
+        .hicon:hover:not(:disabled) { background: var(--bg-canvas); color: var(--text-primary); }
+        .hicon:disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: 0.5; }
+      `}</style>
+    </header>
+  );
+}
+
+const TOOLS: { id: ToolId; label: string; icon: React.ReactNode }[] = [
+  { id: "select", label: "Select / edit text (V)", icon: <MousePointer2 size={16} /> },
+  { id: "pan", label: "Pan (H)", icon: <Hand size={16} /> },
+  { id: "text", label: "Add text (T)", icon: <Type size={16} /> },
+  { id: "image", label: "Add image (I)", icon: <ImageIcon size={16} /> },
+  { id: "signature", label: "Signature (S)", icon: <PenTool size={16} /> },
+  { id: "rectangle", label: "Rectangle (R)", icon: <Square size={16} /> },
+  { id: "ellipse", label: "Ellipse (O)", icon: <Circle size={16} /> },
+  { id: "line", label: "Line (L)", icon: <Minus size={16} /> },
+  { id: "erase", label: "Erase (E)", icon: <Eraser size={16} /> },
+];
+
+interface ToolsBarProps {
+  activeTool: ToolId;
+  onSelectTool: (t: ToolId) => void;
+  currentPage: number;
+  numPages: number;
+  onPage: (p: number) => void;
+  zoom: number;
+  onZoom: (z: number) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+  eraseWidth: number;
+  eraseThickness: number;
+  onEraseWidthChange: (w: number) => void;
+  onEraseThicknessChange: (h: number) => void;
+  canReset: boolean;
+  onReset: () => void;
+}
+
+export function ToolsBar({
+  activeTool,
+  onSelectTool,
+  currentPage,
+  numPages,
+  onPage,
+  zoom,
+  onZoom,
+  isFullscreen,
+  onToggleFullscreen,
+  eraseWidth,
+  eraseThickness,
+  onEraseWidthChange,
+  onEraseThicknessChange,
+  canReset,
+  onReset,
+}: ToolsBarProps) {
+  return (
+    <div className="tools-bar">
+      <div className="tools-group">
+        {TOOLS.map((t) => (
+          <button
+            key={t.id}
+            className={`tbtn ${activeTool === t.id ? "is-active" : ""}`}
+            onClick={() => onSelectTool(t.id)}
+            title={t.label}
+            disabled={numPages === 0}
+            aria-pressed={activeTool === t.id}
+          >
+            {t.icon}
+          </button>
+        ))}
+      </div>
+
+      {activeTool === "erase" && numPages > 0 && (
+        <div className="erase-controls">
+          <label className="erase-slider">
+            <span>Width</span>
+            <input type="range" min={20} max={400} value={eraseWidth} onChange={(e) => onEraseWidthChange(Number(e.target.value))} />
+          </label>
+          <label className="erase-slider">
+            <span>Thickness</span>
+            <input type="range" min={8} max={80} value={eraseThickness} onChange={(e) => onEraseThicknessChange(Number(e.target.value))} />
+          </label>
+        </div>
+      )}
+
+      <span className="tools-spacer" />
+
+      <button className="tbtn" onClick={onReset} disabled={!canReset} title="Reset all edits">
+        <RotateCcw size={16} />
+      </button>
+
+      {numPages > 0 && (
+        <>
+          <span className="tdivider" />
+          <button className="tbtn" onClick={() => onPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0}>
+            <ChevronLeft size={16} />
+          </button>
+          <span className="page-indicator">
+            {currentPage + 1} / {numPages}
+          </span>
+          <button className="tbtn" onClick={() => onPage(Math.min(numPages - 1, currentPage + 1))} disabled={currentPage === numPages - 1}>
+            <ChevronRight size={16} />
+          </button>
+          <span className="tdivider" />
+          <button className="tbtn" onClick={() => onZoom(Math.max(0.5, zoom - 0.1))}>
+            <ZoomOut size={16} />
+          </button>
+          <span className="zoom-indicator">{Math.round(zoom * 100)}%</span>
+          <button className="tbtn" onClick={() => onZoom(Math.min(2.5, zoom + 0.1))}>
+            <ZoomIn size={16} />
+          </button>
+          <button className="tbtn" onClick={onToggleFullscreen} title="Toggle fullscreen">
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          </button>
+        </>
+      )}
+
+      <style>{`
+        .tools-bar {
+          grid-area: tools;
+          background: var(--bg-panel);
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 0 14px;
+          overflow-x: auto;
+        }
+        .tools-group {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .tbtn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          background: transparent;
+          border: none;
+          border-radius: var(--radius-sm);
+          color: var(--text-secondary);
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .tbtn:hover:not(:disabled) { background: var(--bg-canvas); color: var(--text-primary); }
+        .tbtn.is-active { background: var(--accent-blue-soft); color: var(--accent-blue); }
+        .tbtn:disabled { color: var(--text-tertiary); opacity: 0.45; cursor: not-allowed; }
+        .tdivider {
           width: 1px;
           height: 20px;
-          background: var(--ink-700);
-          margin: 0 4px;
+          background: var(--border);
+          flex-shrink: 0;
+        }
+        .tools-spacer { flex: 1; }
+        .page-indicator, .zoom-indicator {
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-secondary);
+          min-width: 46px;
+          text-align: center;
+          flex-shrink: 0;
         }
         .erase-controls {
-          gap: 16px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding-left: 10px;
+          border-left: 1px solid var(--border);
         }
         .erase-slider {
           display: flex;
           align-items: center;
           gap: 6px;
           font-family: var(--font-mono);
-          font-size: 11px;
-          color: var(--text-on-ink-dim);
+          font-size: 10.5px;
+          color: var(--text-secondary);
+          white-space: nowrap;
         }
         .erase-slider input[type="range"] {
-          width: 90px;
-          accent-color: var(--accent-amber);
-        }
-        .erase-value {
-          min-width: 34px;
-        }
-        .erase-hint {
-          font-size: 11px;
-          color: var(--text-on-ink-dim);
-          font-style: italic;
-        }
-        .btn-primary, .btn-ghost {
-          font-family: var(--font-ui);
-          font-weight: 600;
-          font-size: 13px;
-          border-radius: var(--radius-sm);
-          cursor: pointer;
-          transition: opacity 120ms ease, background 120ms ease;
-        }
-        .btn-primary {
-          background: var(--accent-amber);
-          color: var(--ink-900);
-          border: none;
-          padding: 8px 16px;
-        }
-        .btn-primary:hover { background: var(--accent-amber-dim); }
-        .btn-ghost {
-          background: transparent;
-          color: var(--text-on-ink);
-          border: 1px solid var(--ink-700);
-          padding: 7px 14px;
-        }
-        .btn-ghost.sm { padding: 4px 8px; }
-        .btn-ghost:hover { border-color: var(--accent-amber); }
-        .btn-primary:disabled, .btn-ghost:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
+          width: 80px;
+          accent-color: var(--accent-blue);
         }
       `}</style>
-    </header>
+    </div>
   );
 }

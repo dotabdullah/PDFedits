@@ -2,6 +2,27 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.2.0] — 2026-08-14
+
+A full visual and structural redesign, adopting a cleaner "Studio" layout (inspired by a reference design) in place of the earlier dark ink/amber theme. This is a minor version bump (not a patch) because it changes the whole UI shell, not just fixes — some things you're used to have moved.
+
+### Changed
+- **Complete redesign**: light theme (white panels, blue accent, thin line icons via `lucide-react`) replacing the dark ink/amber/serif look from 0.1.x
+- **New layout**: two-row header (file actions row + tools row), a persistent left **Pages panel** (was a floating strip that only appeared on hover before), and a bottom status bar — all matching a reference layout the user provided
+- **Properties panel** now shows document info (filename, page count, current page) when nothing is selected, instead of a blank empty state
+- Rebranded to **PDFedits Studio**
+
+### Added (Phase 1 — free)
+- **Hand/Pan tool** — drag to scroll around a zoomed page instead of using scrollbars
+- **Shape tools**: Rectangle, Ellipse, and Line — click-drag to draw, with stroke color/width and optional fill, resizable and colorable from the properties panel like any other element
+- **Fullscreen toggle**
+- **In-document search** — find text across all pages, jump to a match
+- **Settings/About panel** with version info
+- **Delete page** from the Pages panel (with confirmation); page indices of existing edits on later pages shift down automatically so nothing misaligns
+
+### Roadmap note — Phase 2 (premium, not built yet)
+Given the scope of this redesign, this release also draws a clearer line for what's staying free vs. becoming a future paid tier: true content-stream redaction, page rotation (needs careful coordinate remapping so existing edits don't shift — deliberately not rushed), a crop tool, freehand pencil annotation, original-PDF-font embedding, and multi-select/copy-paste are all planned for a Phase 2 premium tier rather than free v1. See the Roadmap section in the README for the full list and reasoning.
+
 ## [0.1.4] — 2026-08-13
 
 ### Fixed
