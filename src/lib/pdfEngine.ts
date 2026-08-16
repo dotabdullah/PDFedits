@@ -1,7 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
-import { PDFDocument, rgb, StandardFonts, PDFFont } from "pdf-lib";
-import type { EditorElement, ExistingTextItem, PageSize, SearchMatch } from "./types";
+import { PDFDocument, rgb, StandardFonts, PDFFont, degrees } from "pdf-lib";
+import type { EditorElement, ExistingTextItem, PageSize, SearchMatch, SearchOptions } from "./types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -83,14 +83,30 @@ export async function flattenToPdf(
       });
     } else if (el.kind === "text") {
       const font = await getFont(el.fontFamily, !!el.bold, !!el.italic);
+      const fontSize = el.fontSize / renderScale;
+      const textWidth = font.widthOfTextAtSize(el.content, fontSize);
+      const boxWidth = el.width / renderScale;
+      const alignOffset = el.align === "center" ? (boxWidth - textWidth) / 2 : el.align === "right" ? boxWidth - textWidth : 0;
+      const textX = toPdfX(el.x) + Math.max(0, alignOffset);
+      const textY = toPdfY(el.y, el.fontSize) + el.fontSize * 0.15;
       page.drawText(el.content, {
-        x: toPdfX(el.x),
-        y: toPdfY(el.y, el.fontSize) + el.fontSize * 0.15,
-        size: el.fontSize / renderScale,
+        x: textX,
+        y: textY,
+        size: fontSize,
         font,
         color: rgb(...hexToRgb(el.color)),
-        maxWidth: el.width / renderScale,
+        maxWidth: boxWidth,
+        rotate: degrees(el.rotation ?? 0),
       });
+      if (el.underline) {
+        const underlineY = textY - fontSize * 0.12;
+        page.drawLine({
+          start: { x: textX, y: underlineY },
+          end: { x: textX + Math.min(textWidth, boxWidth), y: underlineY },
+          thickness: Math.max(0.5, fontSize * 0.06),
+          color: rgb(...hexToRgb(el.color)),
+        });
+      }
     } else if (el.kind === "image" || el.kind === "signature") {
       const isPng = el.dataUrl.startsWith("data:image/png");
       const bytes = dataUrlToBytes(el.dataUrl);
@@ -100,6 +116,7 @@ export async function flattenToPdf(
         y: toPdfY(el.y, el.height),
         width: el.width / renderScale,
         height: el.height / renderScale,
+        rotate: degrees(el.rotation ?? 0),
       });
     } else if (el.kind === "rectangle") {
       page.drawRectangle({
@@ -110,6 +127,7 @@ export async function flattenToPdf(
         borderColor: rgb(...hexToRgb(el.strokeColor)),
         borderWidth: el.strokeWidth,
         color: el.fillColor ? rgb(...hexToRgb(el.fillColor)) : undefined,
+        rotate: degrees(el.rotation ?? 0),
       });
     } else if (el.kind === "ellipse") {
       page.drawEllipse({
@@ -120,6 +138,7 @@ export async function flattenToPdf(
         borderColor: rgb(...hexToRgb(el.strokeColor)),
         borderWidth: el.strokeWidth,
         color: el.fillColor ? rgb(...hexToRgb(el.fillColor)) : undefined,
+        rotate: degrees(el.rotation ?? 0),
       });
     } else if (el.kind === "line") {
       const x1 = toPdfX(el.x);
@@ -235,19 +254,30 @@ export function canvasToImageBytes(canvas: HTMLCanvasElement, type: "png" | "jpg
 export async function searchDocument(
   pdfDoc: pdfjsLib.PDFDocumentProxy,
   query: string,
-  scale: number
+  scale: number,
+  options: SearchOptions = { caseSensitive: false, wholeWord: false }
 ): Promise<SearchMatch[]> {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
+  const raw = query.trim();
+  if (!raw) return [];
   const matches: SearchMatch[] = [];
+
+  const test = (haystack: string): boolean => {
+    const h = options.caseSensitive ? haystack : haystack.toLowerCase();
+    const n = options.caseSensitive ? raw : raw.toLowerCase();
+    if (!options.wholeWord) return h.includes(n);
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${escaped}\\b`, options.caseSensitive ? "" : "i").test(h);
+  };
 
   for (let pageIndex = 0; pageIndex < pdfDoc.numPages; pageIndex++) {
     const items = await extractTextItems(pdfDoc, pageIndex, scale);
     for (const item of items) {
-      const lower = item.text.toLowerCase();
-      if (!lower.includes(needle)) continue;
-      const start = Math.max(0, lower.indexOf(needle) - 20);
-      const end = Math.min(item.text.length, lower.indexOf(needle) + needle.length + 20);
+      if (!test(item.text)) continue;
+      const lower = options.caseSensitive ? item.text : item.text.toLowerCase();
+      const needle = options.caseSensitive ? raw : raw.toLowerCase();
+      const idx = Math.max(0, lower.indexOf(needle));
+      const start = Math.max(0, idx - 20);
+      const end = Math.min(item.text.length, idx + needle.length + 20);
       const snippet = `${start > 0 ? "…" : ""}${item.text.slice(start, end)}${end < item.text.length ? "…" : ""}`;
       matches.push({ page: pageIndex, snippet, x: item.x, y: item.y, width: item.width, height: item.height });
     }

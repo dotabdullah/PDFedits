@@ -2,6 +2,22 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.3.0] — 2026-08-15
+
+First installment of moving Phase-2-labeled features into free Phase 1, per user request. Not everything from the requested feature list is here yet — see the README's updated feature table for exactly what shipped this release vs. what's still queued and for which upcoming version, rather than a single vague "coming soon."
+
+### Added
+- **Zoom modes**: Fit Width, Fit Page, Actual Size (100%), plus the existing +/- step zoom, in a dropdown in the tools bar
+- **Page navigation**: First page / Last page buttons, and a "go to page" number field
+- **Search improvements**: Next/Previous match navigation with a "3 of 12" counter, case-sensitive and whole-word toggles, and the active match is now highlighted directly on the page (not just page-jump)
+- **Object rotation** — a rotation slider (0–359°) for text, images, signatures, rectangles, and ellipses in the Properties panel (not lines — their diagonal direction already covers this)
+- **Object layering** — Bring to Front / Send to Back buttons
+- **Copy / Cut / Paste / Duplicate** for any selected element, with Ctrl+C/X/V/D shortcuts — paste drops the element on whichever page you're currently viewing
+- **Text underline** and **text alignment** (left/center/right), alongside the existing bold/italic
+
+### Known approximation
+- Text alignment for **wrapped multi-line** text is computed against the single-line text width, not per-wrapped-line — center/right alignment is exact for text that fits on one line, and approximate once it wraps. Documented in the README.
+
 ## [0.2.0] — 2026-08-14
 
 A full visual and structural redesign, adopting a cleaner "Studio" layout (inspired by a reference design) in place of the earlier dark ink/amber theme. This is a minor version bump (not a patch) because it changes the whole UI shell, not just fixes — some things you're used to have moved.

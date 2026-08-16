@@ -1,37 +1,106 @@
 # PDFedits Studio — Offline PDF Editor
 
-**Current version: v0.2.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+**Current version: v0.3.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
 
 Free, offline, desktop PDF editor. Tauri + React + TypeScript frontend, `pdf.js` for rendering and reading existing text, `pdf-lib` for writing edits back into the PDF, `lucide-react` for icons.
 
-## What's free (Phase 1) vs. premium (Phase 2)
+## Feature status
 
-Everything in this repo is **Phase 1 — free for everyone**. A handful of more advanced features are intentionally *not* built yet and are earmarked for a future **Phase 2 premium tier**, either because they need real engineering to do safely (see the specific reasons below) or because they're a natural place to draw a free/paid line:
+The goal is for **all core PDF viewing and editing to be free (Phase 1)**. A few things are intentionally sequenced across releases rather than rushed — some because they're genuinely bigger engineering lifts (see "Why" column), others just haven't been built yet. This table is kept accurate every release so it's always clear what's actually there vs. still coming, rather than a vague feature list.
 
-| Feature | Phase | Why |
-|---|---|---|
-| View, edit existing text, add text/image/signature, shapes, erase, undo/redo, search, page delete | **1 — Free** | Core editing, ships now |
-| True redaction (removes text from the PDF itself) | 2 — Premium | Current erase is a *visual* patch only — see "Known limitations" |
-| Page rotation | 2 — Premium | Needs coordinate remapping so existing edits on that page don't shift; shipping it without that would silently misplace people's edits |
-| Crop tool | 2 — Premium | New tool surface + mediabox trimming |
-| Freehand pencil annotation | 2 — Premium | Path capture/rendering is a bigger scope than the click-drag shape tools |
-| Original-PDF-font embedding | 2 — Premium | Needs per-glyph fallback logic to be safe — see "On font matching" below |
-| Multi-select / copy-paste / duplicate | 2 — Premium | |
-| PDF merge/split, watermarking, password protection | 2 — Premium | |
+### Viewing & navigation
+| Feature | Status |
+|---|---|
+| Open PDF, drag & drop, page thumbnails, page nav, zoom in/out | ✅ Shipped |
+| Go to specific page, First/Last page | ✅ **0.3.0** |
+| Fit Width / Fit Page / Actual Size / custom zoom % | ✅ **0.3.0** |
+| Full-screen viewing | ✅ Shipped |
+| Search, next/prev navigation + counter, case-sensitive/whole-word, on-page highlight | ✅ **0.3.0** |
+| Basic document info | ✅ Shipped |
+| Continuous scrolling (currently single-page view) | 🔜 Queued — biggest architectural item on the list (renders every page at once instead of one at a time); targeting 0.4.0 |
+| Multiple PDF tabs / multiple open documents | 🔜 Queued, 0.5.0 |
+| Page rotation (viewing) | ⏸ Deferred — see Page management below |
 
-## What it does (Phase 1)
+### Editing
+| Feature | Status |
+|---|---|
+| Add/edit/move/resize/delete text, images | ✅ Shipped |
+| Bold, italic, font size/family, text color | ✅ Shipped |
+| Underline, text alignment (left/center/right) | ✅ **0.3.0** |
+| Rectangles, ellipses, lines | ✅ Shipped |
+| Object selection, move, resize | ✅ Shipped |
+| Object rotation | ✅ **0.3.0** (all shape/text/image/signature elements; not lines, whose diagonal already covers direction) |
+| Object layering (bring to front / send to back) | ✅ **0.3.0** |
+| Copy / Cut / Paste / Duplicate | ✅ **0.3.0** — Ctrl+C/X/V/D |
+| Basic eraser | ✅ Shipped (visual patch only — see Known limitations) |
+| Basic freehand drawing | 🔜 Queued, 0.4.0 — path capture is a bigger scope than the click-drag shape tools |
+
+### Annotations
+| Feature | Status |
+|---|---|
+| Shapes with color | ✅ Shipped (this doubles as the "shapes" annotation type) |
+| Highlight, underline, strike-through as dedicated annotation marks (distinct from editable text) | 🔜 Queued, 0.4.0 |
+| Sticky notes / comments | 🔜 Queued, 0.4.0 |
+
+### Page management
+| Feature | Status |
+|---|---|
+| Delete page | ✅ Shipped |
+| Add blank page, duplicate page, insert pages, extract selected pages | 🔜 Queued, 0.4.0 |
+| Reorder pages (drag thumbnails) | 🔜 Queued, 0.4.0 |
+| Rotate page(s) | ⏸ Deferred until page management lands together — needs coordinate remapping so existing edits on that page don't shift; shipping rotation without that would silently misplace people's edits, so it's going in alongside the other page-management work rather than alone |
+
+### File management
+| Feature | Status |
+|---|---|
+| Open, Save, Save As, Export, Close | ✅ Shipped |
+| Native OS file dialogs, file-overwrite confirmation | ✅ Shipped |
+| Drag & drop | ✅ Shipped |
+| Recent documents | 🔜 Queued, 0.5.0 |
+
+### Undo/redo & shortcuts
+| Feature | Status |
+|---|---|
+| Undo/redo | ✅ Shipped |
+| Copy/Paste/Cut/Duplicate | ✅ **0.3.0** |
+| Keyboard shortcuts | ✅ Shipped, expanded in **0.3.0** |
+
+### Printing
+| Feature | Status |
+|---|---|
+| Print PDF via system dialog | 🔜 Queued, 0.5.0 — planned approach: export current edits to a temp PDF and hand off to the OS's default PDF viewer, so page range/copies/print dialog all come from a viewer that already does this well, rather than us reimplementing a print pipeline |
+
+### Offline
+| Feature | Status |
+|---|---|
+| 100% offline core editing, no account, no cloud | ✅ Shipped |
+| Fully offline including first launch | ⚠️ One gap: `index.html` currently loads two fonts from Google Fonts' CDN. Falls back to system fonts if offline, so nothing breaks, but it's not a hard zero-network guarantee yet — bundling the font files locally is a small fix, queued for 0.3.1 |
+
+### Not planned as free (Phase 2 / premium candidates)
+These need either real engineering most users won't need day-to-day, or are a natural free/paid line:
+
+| Feature | Why premium |
+|---|---|
+| True redaction (removes text from the PDF itself) | Current erase is a *visual* patch only — see "Known limitations" |
+| Crop tool | New tool surface + mediabox trimming |
+| Original-PDF-font embedding | Needs per-glyph fallback logic to be safe — see "On font matching" below |
+| PDF merge/split, watermarking, password protection | |
+
+## What it does today
 
 - Open a PDF, view/scroll/zoom/pan pages, jump between pages via the **Pages panel** on the left (with thumbnails and page count)
 - **Edit existing PDF text in place** — click any text (Select tool) and retype it; drag the width handle to force one line or let it wrap; font family, bold, and italic are auto-detected from the original text and correctable in the Properties panel
-- Add new text boxes, images (PNG/JPG), and hand-drawn e-signatures — click to place, drag to reposition/resize
+- Add new text boxes (bold/italic/underline/alignment/color), images (PNG/JPG), and hand-drawn e-signatures — click to place, drag to reposition/resize/rotate
 - **Draw shapes** — Rectangle, Ellipse, Line — click-drag to size, with stroke color/width and optional fill
 - **Pan tool** — drag to scroll around a zoomed page
 - **Erase tool** — click your own added element to delete it outright; click over original PDF content to patch it with an opaque rectangle. Width/thickness adjustable while active.
-- **Find in document** — search text across all pages, click a result to jump to that page
+- **Find in document** — next/prev navigation, match counter, case-sensitive/whole-word options, on-page highlight
+- **Zoom** — Fit Width, Fit Page, Actual Size, or custom %
+- **Object arrange** — rotate, bring to front/send to back, duplicate, copy/cut/paste (Ctrl+C/X/V/D)
 - **Delete a page** from the Pages panel (edits on later pages automatically shift down to stay aligned)
 - **Reset edits**, **Close** (with unsaved-changes confirmation), **Fullscreen** toggle
 - Undo/redo (Ctrl+Z / Ctrl+Shift+Z) for add/delete/text-edit actions
-- Keyboard shortcuts: `V` select, `H` pan, `T` text, `I` image, `S` signature, `R` rectangle, `O` ellipse, `L` line, `E` erase, `Ctrl+O` open, `Ctrl+F` search, `Delete` removes selection, `Esc` deselects/closes search
+- Keyboard shortcuts: `V` select, `H` pan, `T` text, `I` image, `S` signature, `R` rectangle, `O` ellipse, `L` line, `E` erase, `Ctrl+O` open, `Ctrl+F` search, `Ctrl+C/X/V/D` copy/cut/paste/duplicate, `Delete` removes selection, `Esc` deselects/closes search
 - Drag-and-drop a PDF (or a saved project) onto the window to open it
 - **Save vs. Save As** — Save reuses the location from your last save this session; Save As always prompts and remembers the new location. Same for the project file.
 - **Save/open project (`.pdfedits`)** — bundles the PDF + all edits into one file for resuming later
@@ -110,19 +179,20 @@ Running via plain `npm run dev` (no Rust shell) falls back to browser download f
 
 ## Known limitations (Phase 1, by design)
 
-- The erase tool is **visual only** — it draws an opaque patch over content, it does not remove the underlying text from the PDF's internal structure, so the original text is technically still extractable by someone who goes looking. True redaction is a Phase 2 item; don't rely on erase for legally sensitive redaction (SSNs, medical records, etc.) yet.
+- The erase tool is **visual only** — it draws an opaque patch over content, it does not remove the underlying text from the PDF's internal structure, so the original text is technically still extractable by someone who goes looking. True redaction is a premium-candidate item; don't rely on erase for legally sensitive redaction (SSNs, medical records, etc.) yet.
 - Dragging/resizing an element isn't tracked in undo history (only add/delete/text-edit are)
 - Replacement text for edited existing text uses the 12 standard PDF fonts, not the document's original embedded font (see "On font matching" above)
 - Background-color sampling for patches is a single-pixel sample, so it can miss gradients or busy backgrounds
 - The erase tool's "click to delete your own element" hit-tests the topmost element at that point
-- Page rotation isn't available yet (see Phase 2 table above for why)
+- Page rotation isn't available yet (bundled into the upcoming page-management work — see feature table above)
+- Element rotation pivots around the element's bottom-left corner, not its visual center — this was a deliberate choice to keep the editor preview and the exported PDF pixel-consistent with each other, at the cost of "rotate around center" being the more intuitive mental model. Might revisit if it's a common complaint.
+- Center/right text alignment is computed against the full text string's width, not per-wrapped-line — exact for text that fits on one line, approximate once it wraps to 2+ lines
 
 ## Roadmap
 
-**Phase 2 (premium)** — see the table at the top for the full list and reasoning: true redaction, page rotation, crop tool, freehand pencil, original-font embedding, multi-select/copy-paste, PDF merge/split, watermarking, password protection.
+**Next up (see feature tables above for the authoritative status):**
+- 0.3.1 — bundle fonts locally for a hard zero-network guarantee
+- 0.4.0 — continuous scroll, freehand drawing, dedicated annotations (highlight/underline/strikethrough/notes), page add/duplicate/insert/extract/reorder, page rotation
+- 0.5.0 — multiple open documents, recent documents, printing
 
-**Possible free additions post-0.2.0:**
-- Page reorder (drag thumbnails) and page rotate that's safe for existing edits
-- Track drag/resize in undo history with debounced snapshots
-- Error boundary around the editor so an unexpected crash shows a recoverable screen instead of a blank window
-- Highlight tool (semi-transparent, distinct from opaque erase)
+**Not planned as free** — see the Phase 2 table above: true redaction, crop tool, original-font embedding, PDF merge/split, watermarking, password protection.

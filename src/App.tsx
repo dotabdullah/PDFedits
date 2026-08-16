@@ -25,9 +25,9 @@ import {
   writeBinaryToPath,
   writeTextToPath,
 } from "./lib/nativeIO";
-import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, ToolId } from "./lib/types";
+import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, SearchOptions, ToolId, ZoomMode } from "./lib/types";
 
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.3.0";
 const RENDER_SCALE_BASE = 1.4;
 const HISTORY_LIMIT = 50;
 
@@ -37,7 +37,8 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
-  const [zoomStep, setZoomStep] = useState(1);
+  const [zoom, setZoom] = useState(RENDER_SCALE_BASE);
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("custom");
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [elements, setElements] = useState<EditorElement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -51,16 +52,20 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ caseSensitive: false, wholeWord: false });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const clipboardRef = useRef<EditorElement | null>(null);
 
   const pastRef = useRef<EditorElement[][]>([]);
   const futureRef = useRef<EditorElement[][]>([]);
   const [, setHistoryTick] = useState(0);
 
-  const renderScale = RENDER_SCALE_BASE * zoomStep;
+  const renderScale = zoom;
 
   useEffect(() => {
     function onFsChange() {
@@ -223,6 +228,66 @@ export default function App() {
   function deleteElement(id: string) {
     commit((prev) => prev.filter((el) => el.id !== id));
     setSelectedId(null);
+  }
+
+  /** "Front" = last in array (renders on top); "back" = first. Z-order is just array order. */
+  function bringToFront(id: string) {
+    commit((prev) => {
+      const el = prev.find((e) => e.id === id);
+      if (!el) return prev;
+      return [...prev.filter((e) => e.id !== id), el];
+    });
+  }
+
+  function sendToBack(id: string) {
+    commit((prev) => {
+      const el = prev.find((e) => e.id === id);
+      if (!el) return prev;
+      return [el, ...prev.filter((e) => e.id !== id)];
+    });
+  }
+
+  function duplicateElement(id: string) {
+    const el = elements.find((e) => e.id === id);
+    if (!el) return;
+    const copy: EditorElement = { ...el, id: crypto.randomUUID(), x: el.x + 16, y: el.y + 16 };
+    commit((prev) => [...prev, copy]);
+    setSelectedId(copy.id);
+  }
+
+  function copySelected() {
+    const el = elements.find((e) => e.id === selectedId);
+    if (el) clipboardRef.current = el;
+  }
+
+  function cutSelected() {
+    if (!selectedId) return;
+    copySelected();
+    deleteElement(selectedId);
+  }
+
+  function pasteClipboard() {
+    const clip = clipboardRef.current;
+    if (!clip) return;
+    const copy: EditorElement = { ...clip, id: crypto.randomUUID(), page: currentPage, x: clip.x + 16, y: clip.y + 16 };
+    commit((prev) => [...prev, copy]);
+    setSelectedId(copy.id);
+  }
+
+  function zoomStep(delta: number) {
+    setZoomMode("custom");
+    setZoom((z) => Math.max(0.25, Math.min(4, z + delta)));
+  }
+
+  function setCustomZoomPercent(percent: number) {
+    if (!Number.isFinite(percent) || percent <= 0) return;
+    setZoomMode("custom");
+    setZoom(percent / 100);
+  }
+
+  function goToPage(pageNumberOneIndexed: number) {
+    const clamped = Math.max(1, Math.min(numPages, Math.round(pageNumberOneIndexed)));
+    setCurrentPage(clamped - 1);
   }
 
   function commitExistingTextEdit(item: ExistingTextItem, newText: string, backgroundColor: string, width: number) {
@@ -478,11 +543,31 @@ export default function App() {
 
   async function handleSearch(query: string) {
     if (!pdfDoc) return [];
-    return searchDocument(pdfDoc, query, renderScale);
+    const matches = await searchDocument(pdfDoc, query, renderScale, searchOptions);
+    setSearchMatches(matches);
+    setActiveMatchIndex(0);
+    if (matches.length > 0) setCurrentPage(matches[0].page);
+    return matches;
   }
 
   function handleSearchJump(match: SearchMatch) {
+    const idx = searchMatches.indexOf(match);
+    if (idx >= 0) setActiveMatchIndex(idx);
     setCurrentPage(match.page);
+  }
+
+  function searchNext() {
+    if (searchMatches.length === 0) return;
+    const next = (activeMatchIndex + 1) % searchMatches.length;
+    setActiveMatchIndex(next);
+    setCurrentPage(searchMatches[next].page);
+  }
+
+  function searchPrev() {
+    if (searchMatches.length === 0) return;
+    const prev = (activeMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+    setActiveMatchIndex(prev);
+    setCurrentPage(searchMatches[prev].page);
   }
 
   useEffect(() => {
@@ -509,6 +594,26 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         if (pdfDoc) setShowSearch((s) => !s);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selectedId) {
+        e.preventDefault();
+        copySelected();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x" && selectedId) {
+        e.preventDefault();
+        cutSelected();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v" && !isTyping) {
+        e.preventDefault();
+        pasteClipboard();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d" && selectedId && !isTyping) {
+        e.preventDefault();
+        duplicateElement(selectedId);
         return;
       }
       if (isTyping) return;
@@ -540,7 +645,7 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, pdfDoc]);
+  }, [selectedId, pdfDoc, elements, currentPage, searchMatches, activeMatchIndex]);
 
   const selectedElement = elements.find((e) => e.id === selectedId) ?? null;
   const docInfo = fileName ? { fileName, numPages, currentPage } : null;
@@ -582,8 +687,16 @@ export default function App() {
         currentPage={currentPage}
         numPages={numPages}
         onPage={setCurrentPage}
-        zoom={zoomStep}
-        onZoom={setZoomStep}
+        onGoToPage={goToPage}
+        onFirstPage={() => setCurrentPage(0)}
+        onLastPage={() => setCurrentPage(Math.max(0, numPages - 1))}
+        zoom={zoom}
+        zoomMode={zoomMode}
+        onZoomStep={zoomStep}
+        onZoomPercent={setCustomZoomPercent}
+        onFitWidth={() => setZoomMode("fit-width")}
+        onFitPage={() => setZoomMode("fit-page")}
+        onActualSize={() => setZoomMode("actual")}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
         eraseWidth={eraseWidth}
@@ -601,6 +714,8 @@ export default function App() {
           pdfDoc={pdfDoc}
           pageIndex={currentPage}
           zoom={renderScale}
+          zoomMode={zoomMode}
+          onZoomChange={setZoom}
           activeTool={activeTool}
           elements={elements}
           eraseWidth={eraseWidth}
@@ -613,18 +728,38 @@ export default function App() {
           pendingImage={pendingImage}
           onConsumePendingImage={() => setPendingImage(null)}
           onCommitTextEdit={commitExistingTextEdit}
+          highlightMatch={searchMatches[activeMatchIndex] ?? null}
         />
       ) : (
         <EmptyState onOpen={handleOpenClick} />
       )}
 
-      <SidePanel selected={selectedElement} docInfo={docInfo} onUpdate={updateElement} onDelete={deleteElement} />
+      <SidePanel
+        selected={selectedElement}
+        docInfo={docInfo}
+        onUpdate={updateElement}
+        onDelete={deleteElement}
+        onDuplicate={duplicateElement}
+        onBringToFront={bringToFront}
+        onSendToBack={sendToBack}
+      />
 
       <StatusBar onAboutClick={() => setShowAbout(true)} />
 
       {showSigPad && <SignaturePad onConfirm={handleSignatureConfirm} onClose={() => setShowSigPad(false)} />}
       {showAbout && <AboutModal version={APP_VERSION} onClose={() => setShowAbout(false)} />}
-      {showSearch && pdfDoc && <SearchPanel onSearch={handleSearch} onJump={handleSearchJump} onClose={() => setShowSearch(false)} />}
+      {showSearch && pdfDoc && (
+        <SearchPanel
+          onSearch={handleSearch}
+          onJump={handleSearchJump}
+          onClose={() => setShowSearch(false)}
+          options={searchOptions}
+          onOptionsChange={setSearchOptions}
+          activeIndex={activeMatchIndex}
+          onNext={searchNext}
+          onPrev={searchPrev}
+        />
+      )}
 
       {isDraggingFile && (
         <div className="drop-veil">

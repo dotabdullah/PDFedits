@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Copy, SendToBack, BringToFront, Trash2 } from "lucide-react";
 import type { EditorElement, EllipseElement, LineElement, RectangleElement, TextElement } from "../lib/types";
 
 export interface DocInfo {
@@ -12,9 +12,12 @@ interface Props {
   docInfo: DocInfo | null;
   onUpdate: (id: string, patch: Partial<EditorElement>) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (id: string) => void;
+  onBringToFront: (id: string) => void;
+  onSendToBack: (id: string) => void;
 }
 
-export function SidePanel({ selected, docInfo, onUpdate, onDelete }: Props) {
+export function SidePanel({ selected, docInfo, onUpdate, onDelete, onDuplicate, onBringToFront, onSendToBack }: Props) {
   return (
     <aside className="side-panel">
       <h2 className="panel-title">Properties</h2>
@@ -46,6 +49,24 @@ export function SidePanel({ selected, docInfo, onUpdate, onDelete }: Props) {
             <NumberField label="W" value={Math.round(selected.width)} onChange={(v) => onUpdate(selected.id, { width: v })} />
             <NumberField label="H" value={Math.round(selected.height)} onChange={(v) => onUpdate(selected.id, { height: v })} />
           </div>
+          {selected.kind !== "erase" && <RotationField el={selected} onUpdate={onUpdate} />}
+        </div>
+      )}
+
+      {selected && (
+        <div className="field-group">
+          <label className="field-label">Arrange</label>
+          <div className="arrange-row">
+            <button className="btn-secondary" onClick={() => onBringToFront(selected.id)} title="Bring to front">
+              <BringToFront size={14} /> Front
+            </button>
+            <button className="btn-secondary" onClick={() => onSendToBack(selected.id)} title="Send to back">
+              <SendToBack size={14} /> Back
+            </button>
+          </div>
+          <button className="btn-secondary full" onClick={() => onDuplicate(selected.id)} title="Duplicate (Ctrl+D)">
+            <Copy size={14} /> Duplicate
+          </button>
         </div>
       )}
 
@@ -92,6 +113,24 @@ export function SidePanel({ selected, docInfo, onUpdate, onDelete }: Props) {
           margin: 12px 0 6px;
         }
         .field-row { display: flex; gap: 8px; }
+        .arrange-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .btn-secondary {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 7px;
+          background: var(--bg-canvas);
+          border: 1px solid var(--border);
+          color: var(--text-primary);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .btn-secondary:hover { border-color: var(--border-strong); }
+        .btn-secondary.full { width: 100%; }
         .btn-danger {
           width: 100%;
           margin-top: 8px;
@@ -135,6 +174,29 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function RotationField({ el, onUpdate }: { el: EditorElement; onUpdate: Props["onUpdate"] }) {
+  return (
+    <>
+      <label className="field-label">Rotation</label>
+      <div className="rotation-row">
+        <input
+          type="range"
+          min={0}
+          max={359}
+          value={el.rotation ?? 0}
+          onChange={(e) => onUpdate(el.id, { rotation: Number(e.target.value) })}
+        />
+        <span className="rotation-value">{el.rotation ?? 0}°</span>
+      </div>
+      <style>{`
+        .rotation-row { display: flex; align-items: center; gap: 8px; }
+        .rotation-row input[type="range"] { flex: 1; }
+        .rotation-value { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); min-width: 32px; text-align: right; }
+      `}</style>
+    </>
+  );
+}
+
 function TextProps({ el, onUpdate }: { el: TextElement; onUpdate: Props["onUpdate"] }) {
   return (
     <div className="field-group">
@@ -157,12 +219,28 @@ function TextProps({ el, onUpdate }: { el: TextElement; onUpdate: Props["onUpdat
         <button type="button" className={`toggle-btn ${el.bold ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { bold: !el.bold })}>
           B
         </button>
-        <button type="button" className={`toggle-btn ${el.italic ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { italic: !el.italic })}>
+        <button type="button" className={`toggle-btn italic-btn ${el.italic ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { italic: !el.italic })}>
           I
+        </button>
+        <button type="button" className={`toggle-btn underline-btn ${el.underline ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { underline: !el.underline })}>
+          U
+        </button>
+      </div>
+      <label className="field-label">Alignment</label>
+      <div className="style-toggles">
+        <button type="button" className={`toggle-btn ${(el.align ?? "left") === "left" ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { align: "left" })}>
+          <AlignLeft size={14} />
+        </button>
+        <button type="button" className={`toggle-btn ${el.align === "center" ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { align: "center" })}>
+          <AlignCenter size={14} />
+        </button>
+        <button type="button" className={`toggle-btn ${el.align === "right" ? "is-on" : ""}`} onClick={() => onUpdate(el.id, { align: "right" })}>
+          <AlignRight size={14} />
         </button>
       </div>
       <label className="field-label">Color</label>
       <input type="color" value={el.color} onChange={(e) => onUpdate(el.id, { color: e.target.value })} />
+      <RotationField el={el} onUpdate={onUpdate} />
       <style>{sharedFieldStyles}</style>
     </div>
   );
@@ -199,6 +277,7 @@ function ShapeProps({ el, onUpdate }: { el: RectangleElement | EllipseElement; o
         <NumberField label="W" value={Math.round(el.width)} onChange={(v) => onUpdate(el.id, { width: v })} />
         <NumberField label="H" value={Math.round(el.height)} onChange={(v) => onUpdate(el.id, { height: v })} />
       </div>
+      <RotationField el={el} onUpdate={onUpdate} />
       <style>{`
         ${sharedFieldStyles}
         .fill-row { display: flex; align-items: center; gap: 8px; }
@@ -245,6 +324,9 @@ const sharedFieldStyles = `
   .style-toggles { display: flex; gap: 6px; }
   .toggle-btn {
     width: 32px; height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: var(--bg-canvas);
     border: 1px solid var(--border);
     color: var(--text-primary);
@@ -253,7 +335,8 @@ const sharedFieldStyles = `
     font-family: var(--font-ui);
     font-size: 13px;
   }
-  .toggle-btn:nth-child(2) { font-style: italic; }
+  .italic-btn { font-style: italic; }
+  .underline-btn { text-decoration: underline; }
   .toggle-btn.is-on {
     background: var(--accent-blue-soft);
     border-color: var(--accent-blue);

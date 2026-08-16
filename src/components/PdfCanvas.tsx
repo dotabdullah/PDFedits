@@ -8,8 +8,10 @@ import type {
   LineElement,
   PageSize,
   RectangleElement,
+  SearchMatch,
   TextElement,
   ToolId,
+  ZoomMode,
 } from "../lib/types";
 
 const SHAPE_TOOLS: ToolId[] = ["rectangle", "ellipse", "line"];
@@ -19,6 +21,8 @@ interface Props {
   pdfDoc: pdfjsLib.PDFDocumentProxy | null;
   pageIndex: number;
   zoom: number;
+  zoomMode: ZoomMode;
+  onZoomChange: (z: number) => void;
   activeTool: ToolId;
   elements: EditorElement[];
   eraseWidth: number;
@@ -31,6 +35,7 @@ interface Props {
   pendingImage: string | null;
   onConsumePendingImage: () => void;
   onCommitTextEdit: (item: ExistingTextItem, newText: string, backgroundColor: string, width: number) => void;
+  highlightMatch: SearchMatch | null;
 }
 
 type DragState =
@@ -53,6 +58,8 @@ export function PdfCanvas({
   pdfDoc,
   pageIndex,
   zoom,
+  zoomMode,
+  onZoomChange,
   activeTool,
   elements,
   eraseWidth,
@@ -65,6 +72,7 @@ export function PdfCanvas({
   pendingImage,
   onConsumePendingImage,
   onCommitTextEdit,
+  highlightMatch,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -80,10 +88,36 @@ export function PdfCanvas({
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
-    renderPage(pdfDoc, pageIndex, canvasRef.current, zoom).then(setPageSize);
-    extractTextItems(pdfDoc, pageIndex, zoom).then(setExistingText);
-    setEditingItemId(null);
-  }, [pdfDoc, pageIndex, zoom]);
+    let cancelled = false;
+
+    async function run() {
+      let scale = zoom;
+      if (zoomMode !== "custom") {
+        const page = await pdfDoc!.getPage(pageIndex + 1);
+        const native = page.getViewport({ scale: 1 });
+        const stage = scrollRef.current;
+        const availW = (stage?.clientWidth ?? 900) - 90;
+        const availH = (stage?.clientHeight ?? 700) - 90;
+        if (zoomMode === "fit-width") scale = availW / native.width;
+        else if (zoomMode === "fit-page") scale = Math.min(availW / native.width, availH / native.height);
+        else if (zoomMode === "actual") scale = 1;
+        if (Math.abs(scale - zoom) > 0.005) onZoomChange(scale);
+      }
+      if (cancelled || !canvasRef.current) return;
+      const size = await renderPage(pdfDoc!, pageIndex, canvasRef.current, scale);
+      if (cancelled) return;
+      setPageSize(size);
+      const items = await extractTextItems(pdfDoc!, pageIndex, scale);
+      if (cancelled) return;
+      setExistingText(items);
+      setEditingItemId(null);
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfDoc, pageIndex, zoom, zoomMode]);
 
   const pageElements = elements.filter((e) => e.page === pageIndex);
 
@@ -384,6 +418,18 @@ export function PdfCanvas({
             )
           )}
         </div>
+
+        {highlightMatch && highlightMatch.page === pageIndex && (
+          <div
+            className="search-highlight"
+            style={{
+              left: highlightMatch.x - 2,
+              top: highlightMatch.y - 2,
+              width: highlightMatch.width + 4,
+              height: highlightMatch.height + 4,
+            }}
+          />
+        )}
       </div>
 
       <div className="page-gauge" aria-hidden="true">
@@ -445,6 +491,13 @@ export function PdfCanvas({
           top: 0;
           left: 0;
           pointer-events: none;
+        }
+        .search-highlight {
+          position: absolute;
+          background: rgba(255, 214, 0, 0.35);
+          outline: 2px solid #f2b900;
+          pointer-events: none;
+          border-radius: 2px;
         }
         .existing-text-hit {
           position: absolute;
@@ -552,6 +605,8 @@ function OverlayElement({
     width: el.width,
     height: el.height,
     outline: selected ? "2px solid var(--accent-blue)" : "1px dashed transparent",
+    transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+    transformOrigin: "left bottom",
   };
 
   const handle = selected && (
@@ -573,6 +628,8 @@ function OverlayElement({
             fontFamily: "var(--font-ui)",
             fontWeight: el.bold ? 700 : 400,
             fontStyle: el.italic ? "italic" : "normal",
+            textDecoration: el.underline ? "underline" : "none",
+            textAlign: el.align ?? "left",
           }}
           contentEditable
           suppressContentEditableWarning

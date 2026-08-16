@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   FolderOpen,
   Save,
@@ -17,6 +18,8 @@ import {
   Eraser,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ZoomOut,
   ZoomIn,
   Maximize,
@@ -24,7 +27,7 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
-import type { ToolId } from "../lib/types";
+import type { ToolId, ZoomMode } from "../lib/types";
 
 interface HeaderBarProps {
   fileName: string | null;
@@ -229,8 +232,16 @@ interface ToolsBarProps {
   currentPage: number;
   numPages: number;
   onPage: (p: number) => void;
+  onGoToPage: (n: number) => void;
+  onFirstPage: () => void;
+  onLastPage: () => void;
   zoom: number;
-  onZoom: (z: number) => void;
+  zoomMode: ZoomMode;
+  onZoomStep: (delta: number) => void;
+  onZoomPercent: (percent: number) => void;
+  onFitWidth: () => void;
+  onFitPage: () => void;
+  onActualSize: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   eraseWidth: number;
@@ -247,8 +258,16 @@ export function ToolsBar({
   currentPage,
   numPages,
   onPage,
+  onGoToPage,
+  onFirstPage,
+  onLastPage,
   zoom,
-  onZoom,
+  zoomMode,
+  onZoomStep,
+  onZoomPercent,
+  onFitWidth,
+  onFitPage,
+  onActualSize,
   isFullscreen,
   onToggleFullscreen,
   eraseWidth,
@@ -258,6 +277,9 @@ export function ToolsBar({
   canReset,
   onReset,
 }: ToolsBarProps) {
+  const [pageInput, setPageInput] = useState(String(currentPage + 1));
+  useEffect(() => setPageInput(String(currentPage + 1)), [currentPage]);
+
   return (
     <div className="tools-bar">
       <div className="tools-group">
@@ -297,21 +319,54 @@ export function ToolsBar({
       {numPages > 0 && (
         <>
           <span className="tdivider" />
-          <button className="tbtn" onClick={() => onPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0}>
+          <button className="tbtn" onClick={onFirstPage} disabled={currentPage === 0} title="First page">
+            <ChevronsLeft size={16} />
+          </button>
+          <button className="tbtn" onClick={() => onPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0} title="Previous page">
             <ChevronLeft size={16} />
           </button>
-          <span className="page-indicator">
-            {currentPage + 1} / {numPages}
-          </span>
-          <button className="tbtn" onClick={() => onPage(Math.min(numPages - 1, currentPage + 1))} disabled={currentPage === numPages - 1}>
+          <form
+            className="page-goto"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onGoToPage(Number(pageInput));
+            }}
+          >
+            <input
+              className="page-input"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onBlur={() => onGoToPage(Number(pageInput))}
+              inputMode="numeric"
+            />
+            <span>/ {numPages}</span>
+          </form>
+          <button className="tbtn" onClick={() => onPage(Math.min(numPages - 1, currentPage + 1))} disabled={currentPage === numPages - 1} title="Next page">
             <ChevronRight size={16} />
           </button>
+          <button className="tbtn" onClick={onLastPage} disabled={currentPage === numPages - 1} title="Last page">
+            <ChevronsRight size={16} />
+          </button>
           <span className="tdivider" />
-          <button className="tbtn" onClick={() => onZoom(Math.max(0.5, zoom - 0.1))}>
+          <button className="tbtn" onClick={() => onZoomStep(-0.1)} title="Zoom out">
             <ZoomOut size={16} />
           </button>
-          <span className="zoom-indicator">{Math.round(zoom * 100)}%</span>
-          <button className="tbtn" onClick={() => onZoom(Math.min(2.5, zoom + 0.1))}>
+          <select
+            className="zoom-select"
+            value={zoomMode === "custom" ? "custom" : zoomMode}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "fit-width") onFitWidth();
+              else if (v === "fit-page") onFitPage();
+              else if (v === "actual") onActualSize();
+            }}
+          >
+            <option value="custom">{Math.round(zoom * 100)}%</option>
+            <option value="fit-width">Fit Width</option>
+            <option value="fit-page">Fit Page</option>
+            <option value="actual">Actual Size</option>
+          </select>
+          <button className="tbtn" onClick={() => onZoomStep(0.1)} title="Zoom in">
             <ZoomIn size={16} />
           </button>
           <button className="tbtn" onClick={onToggleFullscreen} title="Toggle fullscreen">
@@ -359,12 +414,35 @@ export function ToolsBar({
           flex-shrink: 0;
         }
         .tools-spacer { flex: 1; }
-        .page-indicator, .zoom-indicator {
+        .page-goto {
+          display: flex;
+          align-items: center;
+          gap: 4px;
           font-family: var(--font-mono);
           font-size: 11px;
           color: var(--text-secondary);
-          min-width: 46px;
+          flex-shrink: 0;
+        }
+        .page-input {
+          width: 32px;
           text-align: center;
+          font-family: var(--font-mono);
+          font-size: 11px;
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          padding: 3px 2px;
+          color: var(--text-primary);
+          background: var(--bg-panel);
+        }
+        .zoom-select {
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-secondary);
+          background: var(--bg-panel);
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          padding: 4px 4px;
+          min-width: 92px;
           flex-shrink: 0;
         }
         .erase-controls {

@@ -7,6 +7,7 @@ export interface BaseElement {
   y: number;
   width: number;
   height: number;
+  rotation?: number; // degrees, clockwise
 }
 
 export interface TextElement extends BaseElement {
@@ -17,6 +18,8 @@ export interface TextElement extends BaseElement {
   fontFamily: "sans" | "serif" | "mono";
   bold?: boolean;
   italic?: boolean;
+  underline?: boolean;
+  align?: "left" | "center" | "right";
 }
 
 export interface ImageElement extends BaseElement {
@@ -94,6 +97,13 @@ export interface SearchMatch {
   width: number;
   height: number;
 }
+
+export interface SearchOptions {
+  caseSensitive: boolean;
+  wholeWord: boolean;
+}
+
+export type ZoomMode = "custom" | "fit-width" | "fit-page" | "actual";
 
 /** Serialized session: original PDF bytes + all edits, reopenable later. */
 export interface ProjectFile {
