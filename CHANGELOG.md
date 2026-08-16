@@ -2,6 +2,13 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.3.1] — 2026-08-16
+
+Small, focused release: closes the one real gap in the "100% offline" claim.
+
+### Fixed
+- **App fonts (Manrope, IBM Plex Mono) were loaded from Google Fonts' CDN on first launch.** They degraded gracefully to system fonts when offline, so nothing broke, but it wasn't a hard zero-network guarantee. Both fonts are now bundled locally in `public/fonts/` and loaded via `@font-face` — the app makes zero network requests at any point now, including first launch. OFL license files for both fonts are included alongside them (`public/fonts/OFL-*.txt`) per their license requirements.
+
 ## [0.3.0] — 2026-08-15
 
 First installment of moving Phase-2-labeled features into free Phase 1, per user request. Not everything from the requested feature list is here yet — see the README's updated feature table for exactly what shipped this release vs. what's still queued and for which upcoming version, rather than a single vague "coming soon."

@@ -1,6 +1,6 @@
 # PDFedits Studio — Offline PDF Editor
 
-**Current version: v0.3.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+**Current version: v0.3.1** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
 
 Free, offline, desktop PDF editor. Tauri + React + TypeScript frontend, `pdf.js` for rendering and reading existing text, `pdf-lib` for writing edits back into the PDF, `lucide-react` for icons.
 
@@ -74,7 +74,7 @@ The goal is for **all core PDF viewing and editing to be free (Phase 1)**. A few
 | Feature | Status |
 |---|---|
 | 100% offline core editing, no account, no cloud | ✅ Shipped |
-| Fully offline including first launch | ⚠️ One gap: `index.html` currently loads two fonts from Google Fonts' CDN. Falls back to system fonts if offline, so nothing breaks, but it's not a hard zero-network guarantee yet — bundling the font files locally is a small fix, queued for 0.3.1 |
+| Fully offline including first launch | ✅ **0.3.1** — fonts bundled locally in `public/fonts/`, no CDN dependency anywhere in the app |
 
 ### Not planned as free (Phase 2 / premium candidates)
 These need either real engineering most users won't need day-to-day, or are a natural free/paid line:
@@ -132,8 +132,9 @@ pdf-editor/
 │   │   ├── pdfEngine.ts       # render, text/font extraction, search, flatten/export, page delete, base64 helpers
 │   │   ├── nativeIO.ts        # Tauri dialog + fs wrappers (Save vs Save As), browser-download fallback
 │   │   └── types.ts
-│   ├── styles/global.css      # light "Studio" design tokens
+│   ├── styles/global.css      # light "Studio" design tokens + local @font-face rules
 │   └── App.tsx
+├── public/fonts/               # bundled Manrope + IBM Plex Mono (OFL-licensed) — no CDN dependency
 ├── src-tauri/
 │   ├── src/main.rs
 │   ├── Cargo.toml
@@ -191,7 +192,6 @@ Running via plain `npm run dev` (no Rust shell) falls back to browser download f
 ## Roadmap
 
 **Next up (see feature tables above for the authoritative status):**
-- 0.3.1 — bundle fonts locally for a hard zero-network guarantee
 - 0.4.0 — continuous scroll, freehand drawing, dedicated annotations (highlight/underline/strikethrough/notes), page add/duplicate/insert/extract/reorder, page rotation
 - 0.5.0 — multiple open documents, recent documents, printing
 
