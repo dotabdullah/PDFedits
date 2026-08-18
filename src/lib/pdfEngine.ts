@@ -148,6 +148,45 @@ export async function flattenToPdf(
       const start = el.descending ? { x: x1, y: yTop } : { x: x1, y: yBottom };
       const end = el.descending ? { x: x2, y: yBottom } : { x: x2, y: yTop };
       page.drawLine({ start, end, thickness: el.strokeWidth, color: rgb(...hexToRgb(el.strokeColor)) });
+    } else if (el.kind === "highlight") {
+      page.drawRectangle({
+        x: toPdfX(el.x),
+        y: toPdfY(el.y, el.height),
+        width: el.width / renderScale,
+        height: el.height / renderScale,
+        color: rgb(...hexToRgb(el.color)),
+        opacity: 0.35,
+        rotate: degrees(el.rotation ?? 0),
+      });
+    } else if (el.kind === "textmark") {
+      const markY = el.style === "underline" ? toPdfY(el.y, el.height * 0.92) : toPdfY(el.y, el.height * 0.5);
+      page.drawLine({
+        start: { x: toPdfX(el.x), y: markY },
+        end: { x: toPdfX(el.x + el.width), y: markY },
+        thickness: el.strokeWidth,
+        color: rgb(...hexToRgb(el.color)),
+      });
+    } else if (el.kind === "note") {
+      const markerSize = Math.min(el.width, el.height);
+      page.drawRectangle({
+        x: toPdfX(el.x),
+        y: toPdfY(el.y, markerSize),
+        width: markerSize / renderScale,
+        height: markerSize / renderScale,
+        color: rgb(...hexToRgb(el.color)),
+      });
+      if (el.content.trim()) {
+        const font = await getFont("sans", false, false);
+        const noteFontSize = 8;
+        page.drawText(el.content, {
+          x: toPdfX(el.x) + markerSize / renderScale + 4,
+          y: toPdfY(el.y, markerSize / 2) - noteFontSize / 3,
+          size: noteFontSize,
+          font,
+          color: rgb(0.1, 0.1, 0.12),
+          maxWidth: 220,
+        });
+      }
     }
   }
 
@@ -290,6 +329,64 @@ export async function searchDocument(
 export async function deletePageFromPdf(bytes: Uint8Array, pageIndex: number): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(bytes);
   pdfDoc.removePage(pageIndex);
+  return pdfDoc.save();
+}
+
+/** Inserts a blank page after `afterIndex` (use -1 to insert at the very start). Matches the size of the nearest existing page. */
+export async function addBlankPageToPdf(bytes: Uint8Array, afterIndex: number): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(bytes);
+  const refPage = pdfDoc.getPage(Math.max(0, Math.min(afterIndex, pdfDoc.getPageCount() - 1)));
+  const { width, height } = refPage.getSize();
+  pdfDoc.insertPage(afterIndex + 1, [width, height]);
+  return pdfDoc.save();
+}
+
+/** Duplicates a page, inserting the copy immediately after the original. */
+export async function duplicatePageInPdf(bytes: Uint8Array, pageIndex: number): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(bytes);
+  const [copied] = await pdfDoc.copyPages(pdfDoc, [pageIndex]);
+  pdfDoc.insertPage(pageIndex + 1, copied);
+  return pdfDoc.save();
+}
+
+/** Inserts every page from `sourceBytes` after `afterIndex` in `targetBytes`. Returns the new bytes and how many pages were inserted. */
+export async function insertPdfPages(
+  targetBytes: Uint8Array,
+  afterIndex: number,
+  sourceBytes: Uint8Array
+): Promise<{ bytes: Uint8Array; insertedCount: number }> {
+  const targetDoc = await PDFDocument.load(targetBytes);
+  const sourceDoc = await PDFDocument.load(sourceBytes);
+  const indices = sourceDoc.getPageIndices();
+  const copied = await targetDoc.copyPages(sourceDoc, indices);
+  copied.forEach((page, i) => targetDoc.insertPage(afterIndex + 1 + i, page));
+  return { bytes: await targetDoc.save(), insertedCount: copied.length };
+}
+
+/** Builds a brand-new PDF containing only the given (0-indexed) pages, in that order. Used for "Extract selected pages". */
+export async function extractPagesFromPdf(bytes: Uint8Array, pageIndices: number[]): Promise<Uint8Array> {
+  const sourceDoc = await PDFDocument.load(bytes);
+  const newDoc = await PDFDocument.create();
+  const copied = await newDoc.copyPages(sourceDoc, pageIndices);
+  copied.forEach((page) => newDoc.addPage(page));
+  return newDoc.save();
+}
+
+/** Rebuilds the PDF with pages in `newOrder` (each entry is a 0-indexed page from the original). Used for drag-to-reorder. */
+export async function reorderPdfPages(bytes: Uint8Array, newOrder: number[]): Promise<Uint8Array> {
+  const sourceDoc = await PDFDocument.load(bytes);
+  const newDoc = await PDFDocument.create();
+  const copied = await newDoc.copyPages(sourceDoc, newOrder);
+  copied.forEach((page) => newDoc.addPage(page));
+  return newDoc.save();
+}
+
+/** Rotates one page 90° clockwise (cumulative — call again for 180°/270°). */
+export async function rotatePageInPdf(bytes: Uint8Array, pageIndex: number): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(bytes);
+  const page = pdfDoc.getPage(pageIndex);
+  const current = page.getRotation().angle;
+  page.setRotation(degrees((current + 90) % 360));
   return pdfDoc.save();
 }
 

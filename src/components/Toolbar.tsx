@@ -16,6 +16,10 @@ import {
   Circle,
   Minus,
   Eraser,
+  Highlighter,
+  Underline,
+  Strikethrough,
+  StickyNote,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -223,6 +227,10 @@ const TOOLS: { id: ToolId; label: string; icon: React.ReactNode }[] = [
   { id: "rectangle", label: "Rectangle (R)", icon: <Square size={16} /> },
   { id: "ellipse", label: "Ellipse (O)", icon: <Circle size={16} /> },
   { id: "line", label: "Line (L)", icon: <Minus size={16} /> },
+  { id: "highlight", label: "Highlight (G) — click existing text or drag", icon: <Highlighter size={16} /> },
+  { id: "underline", label: "Underline mark (U) — click existing text or drag", icon: <Underline size={16} /> },
+  { id: "strikethrough", label: "Strikethrough (K) — click existing text or drag", icon: <Strikethrough size={16} /> },
+  { id: "note", label: "Sticky note (N)", icon: <StickyNote size={16} /> },
   { id: "erase", label: "Erase (E)", icon: <Eraser size={16} /> },
 ];
 

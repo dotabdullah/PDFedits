@@ -12,9 +12,15 @@ import {
   base64ToBytes,
   bytesToBase64,
   canvasToImageBytes,
+  addBlankPageToPdf,
   deletePageFromPdf,
+  duplicatePageInPdf,
+  extractPagesFromPdf,
   flattenToPdf,
+  insertPdfPages,
   loadPdfDocument,
+  reorderPdfPages,
+  rotatePageInPdf,
   searchDocument,
 } from "./lib/pdfEngine";
 import {
@@ -27,7 +33,7 @@ import {
 } from "./lib/nativeIO";
 import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, SearchOptions, ToolId, ZoomMode } from "./lib/types";
 
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.4.0";
 const RENDER_SCALE_BASE = 1.4;
 const HISTORY_LIMIT = 50;
 
@@ -59,6 +65,8 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const insertPdfInputRef = useRef<HTMLInputElement>(null);
+  const insertPdfInputResolveRef = useRef<((bytes: Uint8Array | null) => void) | null>(null);
   const clipboardRef = useRef<EditorElement | null>(null);
 
   const pastRef = useRef<EditorElement[][]>([]);
@@ -193,6 +201,18 @@ export default function App() {
     e.target.value = "";
   }
 
+  async function handleInsertPdfInputChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const resolve = insertPdfInputResolveRef.current;
+    insertPdfInputResolveRef.current = null;
+    if (!file || !resolve) {
+      resolve?.(null);
+      return;
+    }
+    resolve(new Uint8Array(await file.arrayBuffer()));
+  }
+
   function handleToolSelect(tool: ToolId) {
     setActiveTool(tool);
     setSelectedId(null);
@@ -323,26 +343,149 @@ export default function App() {
     setSelectedId(textId);
   }
 
+  /** Reloads the document from new bytes after a structural change (page add/delete/duplicate/insert/reorder/rotate),
+   *  remapping existing elements' page indices so nothing ends up attached to the wrong page. Resets undo history
+   *  since the underlying page structure changed under it. */
+  async function applyStructuralChange(
+    newBytes: Uint8Array,
+    remapElements: (els: EditorElement[]) => EditorElement[],
+    newCurrentPage?: number
+  ) {
+    const doc = await loadPdfDocument(newBytes);
+    setPdfBytes(newBytes);
+    setPdfDoc(doc);
+    setNumPages(doc.numPages);
+    setElements(remapElements(elements));
+    setSelectedId(null);
+    setCurrentPage((prev) => (newCurrentPage !== undefined ? newCurrentPage : Math.min(prev, doc.numPages - 1)));
+    setSavedPdfPath(null); // structure changed — treat as needing a fresh Save location
+    pastRef.current = [];
+    futureRef.current = [];
+    setHistoryTick((t) => t + 1);
+  }
+
   async function handleDeletePage(pageIndex: number) {
     if (!pdfBytes) return;
     try {
       const newBytes = await deletePageFromPdf(pdfBytes, pageIndex);
-      const remappedElements = elements
-        .filter((el) => el.page !== pageIndex)
-        .map((el) => (el.page > pageIndex ? { ...el, page: el.page - 1 } : el));
-      const doc = await loadPdfDocument(newBytes);
-      setPdfBytes(newBytes);
-      setPdfDoc(doc);
-      setNumPages(doc.numPages);
-      setElements(remappedElements);
-      setSelectedId(null);
-      setCurrentPage((prev) => Math.min(prev, doc.numPages - 1));
-      setSavedPdfPath(null); // structure changed — treat as needing a fresh Save location
-      pastRef.current = [];
-      futureRef.current = [];
-      setHistoryTick((t) => t + 1);
+      await applyStructuralChange(newBytes, (els) =>
+        els.filter((el) => el.page !== pageIndex).map((el) => (el.page > pageIndex ? { ...el, page: el.page - 1 } : el))
+      );
     } catch (err) {
       window.alert(`Couldn't delete that page.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleAddBlankPage(afterIndex: number) {
+    if (!pdfBytes) return;
+    try {
+      const newBytes = await addBlankPageToPdf(pdfBytes, afterIndex);
+      await applyStructuralChange(
+        newBytes,
+        (els) => els.map((el) => (el.page > afterIndex ? { ...el, page: el.page + 1 } : el)),
+        afterIndex + 1
+      );
+    } catch (err) {
+      window.alert(`Couldn't add a page.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleDuplicatePage(pageIndex: number) {
+    if (!pdfBytes) return;
+    try {
+      const newBytes = await duplicatePageInPdf(pdfBytes, pageIndex);
+      await applyStructuralChange(
+        newBytes,
+        (els) =>
+          els.flatMap((el) => {
+            if (el.page > pageIndex) return [{ ...el, page: el.page + 1 }];
+            if (el.page === pageIndex) return [el, { ...el, id: crypto.randomUUID(), page: pageIndex + 1 }];
+            return [el];
+          }),
+        pageIndex + 1
+      );
+    } catch (err) {
+      window.alert(`Couldn't duplicate that page.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleRotatePage(pageIndex: number) {
+    if (!pdfBytes || !pdfDoc) return;
+    try {
+      // Old rendered size (at scale=1, so PDF-point units), converted to the
+      // same px-space our stored element coordinates use (current renderScale) —
+      // needed to remap element bboxes for the added 90° clockwise rotation.
+      const oldPage = await pdfDoc.getPage(pageIndex + 1);
+      const oldViewport = oldPage.getViewport({ scale: 1 });
+      const oldHpx = oldViewport.height * renderScale;
+
+      const newBytes = await rotatePageInPdf(pdfBytes, pageIndex);
+      await applyStructuralChange(newBytes, (els) =>
+        els.map((el) => {
+          if (el.page !== pageIndex) return el;
+          return {
+            ...el,
+            x: oldHpx - el.y - el.height,
+            y: el.x,
+            width: el.height,
+            height: el.width,
+            rotation: ((el.rotation ?? 0) + 90) % 360,
+          };
+        })
+      );
+    } catch (err) {
+      window.alert(`Couldn't rotate that page.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleInsertPdfPages(afterIndex: number) {
+    if (!pdfBytes) return;
+    try {
+      const native = await openBinaryFileDialog([{ name: "PDF", extensions: ["pdf"] }]);
+      let sourceBytes: Uint8Array | null = null;
+      if (native) {
+        sourceBytes = native.bytes;
+      } else {
+        // Fallback outside Tauri: use the hidden <input type=file>.
+        sourceBytes = await new Promise((resolve) => {
+          insertPdfInputResolveRef.current = resolve;
+          insertPdfInputRef.current?.click();
+        });
+      }
+      if (!sourceBytes) return;
+      const { bytes: newBytes, insertedCount } = await insertPdfPages(pdfBytes, afterIndex, sourceBytes);
+      await applyStructuralChange(
+        newBytes,
+        (els) => els.map((el) => (el.page > afterIndex ? { ...el, page: el.page + insertedCount } : el)),
+        afterIndex + 1
+      );
+    } catch (err) {
+      window.alert(`Couldn't insert that PDF's pages.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleReorderPages(newOrder: number[]) {
+    if (!pdfBytes) return;
+    try {
+      const newBytes = await reorderPdfPages(pdfBytes, newOrder);
+      await applyStructuralChange(
+        newBytes,
+        (els) => els.map((el) => ({ ...el, page: newOrder.indexOf(el.page) })),
+        newOrder.indexOf(currentPage)
+      );
+    } catch (err) {
+      window.alert(`Couldn't reorder pages.\n\n${errorMessage(err)}`);
+    }
+  }
+
+  async function handleExtractPages(indices: number[]) {
+    if (!pdfBytes || indices.length === 0) return;
+    try {
+      const newBytes = await extractPagesFromPdf(pdfBytes, indices);
+      const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
+      await saveBinaryFileAs(newBytes, `${baseName}-extracted.pdf`, [{ name: "PDF", extensions: ["pdf"] }]);
+    } catch (err) {
+      window.alert(`Couldn't extract those pages.\n\n${errorMessage(err)}`);
     }
   }
 
@@ -427,6 +570,28 @@ export default function App() {
           ctx.lineTo(el.x + el.width, el.y);
         }
         ctx.stroke();
+      } else if (el.kind === "highlight") {
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = el.color;
+        ctx.fillRect(el.x, el.y, el.width, el.height);
+        ctx.globalAlpha = 1;
+      } else if (el.kind === "textmark") {
+        ctx.lineWidth = el.strokeWidth;
+        ctx.strokeStyle = el.color;
+        const markY = el.style === "underline" ? el.y + el.height * 0.92 : el.y + el.height * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(el.x, markY);
+        ctx.lineTo(el.x + el.width, markY);
+        ctx.stroke();
+      } else if (el.kind === "note") {
+        const markerSize = Math.min(el.width, el.height);
+        ctx.fillStyle = el.color;
+        ctx.fillRect(el.x, el.y, markerSize, markerSize);
+        if (el.content.trim()) {
+          ctx.fillStyle = "#1a1a1f";
+          ctx.font = "11px sans-serif";
+          ctx.fillText(el.content, el.x + markerSize + 4, el.y + markerSize / 2 + 4, 220);
+        }
       }
     }
     const blob = await canvasToImageBytes(composite, format);
@@ -638,6 +803,10 @@ export default function App() {
         o: "ellipse",
         l: "line",
         e: "erase",
+        g: "highlight",
+        u: "underline",
+        k: "strikethrough",
+        n: "note",
       };
       const tool = shortcuts[e.key.toLowerCase()];
       if (tool && pdfDoc) handleToolSelect(tool);
@@ -663,6 +832,7 @@ export default function App() {
       <input ref={fileInputRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleFileChosen} />
       <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" style={{ display: "none" }} onChange={handleImageChosen} />
       <input ref={projectInputRef} type="file" accept=".pdfedits,application/json" style={{ display: "none" }} onChange={handleProjectChosen} />
+      <input ref={insertPdfInputRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleInsertPdfInputChosen} />
 
       <HeaderBar
         fileName={fileName}
@@ -707,7 +877,19 @@ export default function App() {
         onReset={resetAllEdits}
       />
 
-      <PagesPanel pdfDoc={pdfDoc} numPages={numPages} currentPage={currentPage} onSelectPage={setCurrentPage} onDeletePage={handleDeletePage} />
+      <PagesPanel
+        pdfDoc={pdfDoc}
+        numPages={numPages}
+        currentPage={currentPage}
+        onSelectPage={setCurrentPage}
+        onDeletePage={handleDeletePage}
+        onDuplicatePage={handleDuplicatePage}
+        onRotatePage={handleRotatePage}
+        onAddBlankPage={handleAddBlankPage}
+        onInsertPdfPages={handleInsertPdfPages}
+        onReorderPages={handleReorderPages}
+        onExtractPages={handleExtractPages}
+      />
 
       {pdfDoc ? (
         <PdfCanvas

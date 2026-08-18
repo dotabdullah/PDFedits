@@ -1,4 +1,17 @@
-export type ToolId = "select" | "pan" | "text" | "image" | "signature" | "rectangle" | "ellipse" | "line" | "erase";
+export type ToolId =
+  | "select"
+  | "pan"
+  | "text"
+  | "image"
+  | "signature"
+  | "rectangle"
+  | "ellipse"
+  | "line"
+  | "erase"
+  | "highlight"
+  | "underline"
+  | "strikethrough"
+  | "note";
 
 export interface BaseElement {
   id: string;
@@ -59,6 +72,27 @@ export interface LineElement extends BaseElement {
   descending: boolean;
 }
 
+export interface HighlightElement extends BaseElement {
+  kind: "highlight";
+  color: string;
+}
+
+export interface TextMarkElement extends BaseElement {
+  kind: "textmark";
+  style: "underline" | "strikethrough";
+  color: string;
+  strokeWidth: number;
+}
+
+/** A "baked-in" comment marker — not a real interactive PDF annotation, just a
+ *  small icon + its text drawn permanently onto the page at export time (see
+ *  README's "On sticky notes" note for why). */
+export interface NoteElement extends BaseElement {
+  kind: "note";
+  content: string;
+  color: string;
+}
+
 export type EditorElement =
   | TextElement
   | ImageElement
@@ -66,7 +100,10 @@ export type EditorElement =
   | EraseElement
   | RectangleElement
   | EllipseElement
-  | LineElement;
+  | LineElement
+  | HighlightElement
+  | TextMarkElement
+  | NoteElement;
 
 export interface PageSize {
   width: number;

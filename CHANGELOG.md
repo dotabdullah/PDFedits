@@ -2,6 +2,29 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.4.0] — 2026-08-16
+
+Full page management and dedicated annotation tools. Continuous scroll and freehand drawing — the two riskiest, most architecturally different items from the original request — are deliberately not in this release; see "Not in this release" below for why, and 0.4.1 for when.
+
+### Added — Page management
+- **Add blank page** — from the Pages panel footer or per-thumbnail "+" button
+- **Duplicate page** — including duplicating any edits already made on it, so what you see is what gets copied
+- **Insert pages from another PDF** — opens a second PDF and inserts all its pages after the current one
+- **Extract selected pages** — multi-select mode in the Pages panel (checkboxes), exports just those pages as a new PDF; doesn't touch the document you're currently editing
+- **Reorder pages** — drag thumbnails in the Pages panel
+- **Rotate page** — 90° per click, cumulative. This was deliberately held back in earlier releases because rotating a page out from under existing edits on it, without remapping their coordinates, would silently misplace them. That remapping is now implemented (verified against a live pdf-lib round-trip, not just reasoned about) — edits on a rotated page move and resize correctly along with it.
+
+All of the above correctly shift the page index of every existing edit elsewhere in the document, so nothing ends up attached to the wrong page after a structural change.
+
+### Added — Annotations
+- **Highlight** tool — click an existing line of text to highlight exactly that run, or click-drag anywhere (including over images) for a freeform semi-transparent highlight
+- **Underline** and **Strikethrough** annotation marks — same click-existing-text-or-drag interaction as Highlight. These are separate from the bold/italic/underline text-formatting properties on text you've added yourself; these are markup layered on top of existing or placed content.
+- **Sticky notes** — click to place a small colored marker; write the comment in the Properties panel. Exported as a small marker + the comment text drawn permanently onto the page (not a real interactive PDF comment object — see README's "On sticky notes" note for why that's a deliberate simplification, not an oversight).
+
+### Not in this release (queued, 0.4.1)
+- **Continuous scroll** — still single-page view. This is the single biggest architectural item on the whole list: it means rendering every page in the document at once in a scrollable column instead of one page at a time, which touches how the canvas, overlay elements, and existing-text editing all work. Doing it properly (including keeping it performant on long documents) deserves its own release rather than being squeezed in alongside everything else here.
+- **Freehand pencil drawing** — a genuinely different interaction model (continuous path capture) from the click/click-drag tools built so far.
+
 ## [0.3.1] — 2026-08-16
 
 Small, focused release: closes the one real gap in the "100% offline" claim.

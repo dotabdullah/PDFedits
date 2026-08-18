@@ -14,8 +14,11 @@ import type {
   ZoomMode,
 } from "../lib/types";
 
-const SHAPE_TOOLS: ToolId[] = ["rectangle", "ellipse", "line"];
+const SHAPE_TOOLS: ToolId[] = ["rectangle", "ellipse", "line", "highlight", "underline", "strikethrough"];
+const MARK_TOOLS: ToolId[] = ["highlight", "underline", "strikethrough"];
 const DEFAULT_STROKE = "#1f2430";
+const DEFAULT_HIGHLIGHT = "#ffe066";
+const DEFAULT_NOTE_COLOR = "#f2b900";
 
 interface Props {
   pdfDoc: pdfjsLib.PDFDocumentProxy | null;
@@ -42,11 +45,13 @@ type DragState =
   | { mode: "move"; id: string; offsetX: number; offsetY: number }
   | { mode: "resize"; id: string; startX: number; startY: number; startWidth: number; startHeight: number }
   | { mode: "edit-width"; startX: number; startWidth: number }
-  | { mode: "draw-shape"; kind: "rectangle" | "ellipse" | "line"; startX: number; startY: number }
+  | { mode: "draw-shape"; kind: DrawableKind; startX: number; startY: number }
   | { mode: "pan"; startX: number; startY: number; startScrollLeft: number; startScrollTop: number };
 
+type DrawableKind = "rectangle" | "ellipse" | "line" | "highlight" | "underline" | "strikethrough";
+
 interface DraftShape {
-  kind: "rectangle" | "ellipse" | "line";
+  kind: DrawableKind;
   x: number;
   y: number;
   width: number;
@@ -127,11 +132,36 @@ export function PdfCanvas({
   const editableTextItems = existingText.filter((item) => !replacedIds.has(item.id));
 
   function handleExistingTextClick(e: React.MouseEvent, item: ExistingTextItem) {
-    if (activeTool !== "select") return;
     e.stopPropagation();
+    if (MARK_TOOLS.includes(activeTool)) {
+      commitMarkOnExistingText(item, activeTool as "highlight" | "underline" | "strikethrough");
+      return;
+    }
+    if (activeTool !== "select") return;
     setEditingItemId(item.id);
     setEditingWidth(item.width);
     cancelEditRef.current = false;
+  }
+
+  function commitMarkOnExistingText(item: ExistingTextItem, tool: "highlight" | "underline" | "strikethrough") {
+    const id = crypto.randomUUID();
+    if (tool === "highlight") {
+      onAddElement({ id, kind: "highlight", page: pageIndex, x: item.x, y: item.y, width: item.width, height: item.height, color: DEFAULT_HIGHLIGHT });
+    } else {
+      onAddElement({
+        id,
+        kind: "textmark",
+        style: tool,
+        page: pageIndex,
+        x: item.x,
+        y: item.y,
+        width: item.width,
+        height: item.height,
+        color: DEFAULT_STROKE,
+        strokeWidth: 1.5,
+      });
+    }
+    onSelectElement(id);
   }
 
   function handleExistingTextKeyDown(e: React.KeyboardEvent) {
@@ -172,8 +202,9 @@ export function PdfCanvas({
   function handleOverlayMouseDown(e: React.MouseEvent) {
     if (SHAPE_TOOLS.includes(activeTool)) {
       const { x, y } = overlayPoint(e);
-      dragState.current = { mode: "draw-shape", kind: activeTool as "rectangle" | "ellipse" | "line", startX: x, startY: y };
-      setDraftShape({ kind: activeTool as "rectangle" | "ellipse" | "line", x, y, width: 0, height: 0, descending: true });
+      const kind = activeTool as DrawableKind;
+      dragState.current = { mode: "draw-shape", kind, startX: x, startY: y };
+      setDraftShape({ kind, x, y, width: 0, height: 0, descending: true });
     }
   }
 
@@ -220,6 +251,20 @@ export function PdfCanvas({
         height: eraseThickness,
         color: "#ffffff",
       } as EditorElement);
+    } else if (activeTool === "note") {
+      const el: EditorElement = {
+        id: crypto.randomUUID(),
+        kind: "note",
+        page: pageIndex,
+        x,
+        y,
+        width: 22,
+        height: 22,
+        content: "",
+        color: DEFAULT_NOTE_COLOR,
+      };
+      onAddElement(el);
+      onSelectElement(el.id);
     } else {
       onSelectElement(null);
     }
@@ -317,13 +362,17 @@ export function PdfCanvas({
   function commitShape(shape: DraftShape) {
     const id = crypto.randomUUID();
     const base = { id, page: pageIndex, x: shape.x, y: shape.y, width: Math.max(shape.width, 4), height: Math.max(shape.height, 4) };
-    let el: RectangleElement | EllipseElement | LineElement;
+    let el: EditorElement;
     if (shape.kind === "rectangle") {
       el = { ...base, kind: "rectangle", strokeColor: DEFAULT_STROKE, strokeWidth: 2, fillColor: null };
     } else if (shape.kind === "ellipse") {
       el = { ...base, kind: "ellipse", strokeColor: DEFAULT_STROKE, strokeWidth: 2, fillColor: null };
-    } else {
+    } else if (shape.kind === "line") {
       el = { ...base, kind: "line", strokeColor: DEFAULT_STROKE, strokeWidth: 2, descending: shape.descending };
+    } else if (shape.kind === "highlight") {
+      el = { ...base, kind: "highlight", color: DEFAULT_HIGHLIGHT };
+    } else {
+      el = { ...base, kind: "textmark", style: shape.kind, color: DEFAULT_STROKE, strokeWidth: 1.5 };
     }
     onAddElement(el);
     onSelectElement(id);
@@ -410,9 +459,9 @@ export function PdfCanvas({
                   top: item.y,
                   width: item.width,
                   height: item.height,
-                  pointerEvents: activeTool === "select" ? "auto" : "none",
+                  pointerEvents: activeTool === "select" || MARK_TOOLS.includes(activeTool) ? "auto" : "none",
                 }}
-                title="Click to edit this text"
+                title={activeTool === "select" ? "Click to edit this text" : "Click to mark this text"}
                 onClick={(e) => handleExistingTextClick(e, item)}
               />
             )
@@ -473,6 +522,10 @@ export function PdfCanvas({
         }
         .element-draggable:active {
           cursor: grabbing;
+        }
+        .note-marker {
+          border-radius: 4px 4px 4px 0;
+          box-shadow: 0 1px 3px rgba(15,23,42,0.3);
         }
         .resize-handle {
           position: absolute;
@@ -574,6 +627,21 @@ function ShapePreview({ shape }: { shape: DraftShape }) {
   }
   if (shape.kind === "ellipse") {
     return <div style={{ ...style, border: `2px dashed var(--accent-blue)`, borderRadius: "50%" }} />;
+  }
+  if (shape.kind === "highlight") {
+    return <div style={{ ...style, background: "rgba(255, 224, 102, 0.45)", outline: "1px dashed #d9a600" }} />;
+  }
+  if (shape.kind === "underline" || shape.kind === "strikethrough") {
+    return (
+      <div
+        style={{
+          ...style,
+          borderTop: shape.kind === "strikethrough" ? "2px dashed var(--accent-blue)" : undefined,
+          borderBottom: shape.kind === "underline" ? "2px dashed var(--accent-blue)" : undefined,
+          marginTop: shape.kind === "strikethrough" ? shape.height / 2 : 0,
+        }}
+      />
+    );
   }
   const [x1, y1, x2, y2] = shape.descending ? [0, 0, shape.width, shape.height] : [0, shape.height, shape.width, 0];
   return (
@@ -693,9 +761,58 @@ function OverlayElement({
   }
 
   // erase patch
+  if (el.kind === "erase") {
+    return (
+      <>
+        <div className="element-draggable" style={{ ...baseStyle, background: el.color }} onMouseDown={onMouseDown} onClick={onClick} />
+        {handle}
+      </>
+    );
+  }
+
+  if (el.kind === "highlight") {
+    return (
+      <>
+        <div
+          className="element-draggable"
+          style={{ ...baseStyle, background: el.color, opacity: 0.4, mixBlendMode: "multiply" }}
+          onMouseDown={onMouseDown}
+          onClick={onClick}
+        />
+        {handle}
+      </>
+    );
+  }
+
+  if (el.kind === "textmark") {
+    return (
+      <>
+        <div
+          className="element-draggable"
+          style={{
+            ...baseStyle,
+            borderTop: el.style === "strikethrough" ? `${el.strokeWidth}px solid ${el.color}` : undefined,
+            borderBottom: el.style === "underline" ? `${el.strokeWidth}px solid ${el.color}` : undefined,
+            marginTop: el.style === "strikethrough" ? el.height / 2 : 0,
+          }}
+          onMouseDown={onMouseDown}
+          onClick={onClick}
+        />
+        {handle}
+      </>
+    );
+  }
+
+  // note marker
   return (
     <>
-      <div className="element-draggable" style={{ ...baseStyle, background: el.color }} onMouseDown={onMouseDown} onClick={onClick} />
+      <div
+        className="element-draggable note-marker"
+        style={{ ...baseStyle, background: el.color }}
+        title={el.content || "Empty note — select it and add text in the Properties panel"}
+        onMouseDown={onMouseDown}
+        onClick={onClick}
+      />
       {handle}
     </>
   );

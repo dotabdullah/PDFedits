@@ -1,5 +1,5 @@
 import { AlignCenter, AlignLeft, AlignRight, Copy, SendToBack, BringToFront, Trash2 } from "lucide-react";
-import type { EditorElement, EllipseElement, LineElement, RectangleElement, TextElement } from "../lib/types";
+import type { EditorElement, EllipseElement, HighlightElement, LineElement, NoteElement, RectangleElement, TextElement, TextMarkElement } from "../lib/types";
 
 export interface DocInfo {
   fileName: string;
@@ -36,6 +36,9 @@ export function SidePanel({ selected, docInfo, onUpdate, onDelete, onDuplicate, 
       {selected?.kind === "text" && <TextProps el={selected} onUpdate={onUpdate} />}
       {(selected?.kind === "rectangle" || selected?.kind === "ellipse") && <ShapeProps el={selected} onUpdate={onUpdate} />}
       {selected?.kind === "line" && <LineProps el={selected} onUpdate={onUpdate} />}
+      {selected?.kind === "highlight" && <HighlightProps el={selected} onUpdate={onUpdate} />}
+      {selected?.kind === "textmark" && <TextMarkProps el={selected} onUpdate={onUpdate} />}
+      {selected?.kind === "note" && <NoteProps el={selected} onUpdate={onUpdate} />}
 
       {selected && (selected.kind === "image" || selected.kind === "signature" || selected.kind === "erase") && (
         <div className="field-group">
@@ -294,6 +297,74 @@ function LineProps({ el, onUpdate }: { el: LineElement; onUpdate: Props["onUpdat
       <label className="field-label">Thickness</label>
       <input type="range" min={1} max={12} value={el.strokeWidth} onChange={(e) => onUpdate(el.id, { strokeWidth: Number(e.target.value) })} />
       <style>{sharedFieldStyles}</style>
+    </div>
+  );
+}
+
+function HighlightProps({ el, onUpdate }: { el: HighlightElement; onUpdate: Props["onUpdate"] }) {
+  return (
+    <div className="field-group">
+      <label className="field-label">Color</label>
+      <input type="color" value={el.color} onChange={(e) => onUpdate(el.id, { color: e.target.value })} />
+      <label className="field-label">Position</label>
+      <div className="field-row">
+        <NumberField label="X" value={Math.round(el.x)} onChange={(v) => onUpdate(el.id, { x: v })} />
+        <NumberField label="Y" value={Math.round(el.y)} onChange={(v) => onUpdate(el.id, { y: v })} />
+      </div>
+      <label className="field-label">Size</label>
+      <div className="field-row">
+        <NumberField label="W" value={Math.round(el.width)} onChange={(v) => onUpdate(el.id, { width: v })} />
+        <NumberField label="H" value={Math.round(el.height)} onChange={(v) => onUpdate(el.id, { height: v })} />
+      </div>
+      <style>{sharedFieldStyles}</style>
+    </div>
+  );
+}
+
+function TextMarkProps({ el, onUpdate }: { el: TextMarkElement; onUpdate: Props["onUpdate"] }) {
+  return (
+    <div className="field-group">
+      <label className="field-label">Style</label>
+      <select value={el.style} onChange={(e) => onUpdate(el.id, { style: e.target.value as TextMarkElement["style"] })}>
+        <option value="underline">Underline</option>
+        <option value="strikethrough">Strikethrough</option>
+      </select>
+      <label className="field-label">Color</label>
+      <input type="color" value={el.color} onChange={(e) => onUpdate(el.id, { color: e.target.value })} />
+      <label className="field-label">Thickness</label>
+      <input type="range" min={1} max={8} value={el.strokeWidth} onChange={(e) => onUpdate(el.id, { strokeWidth: Number(e.target.value) })} />
+      <style>{sharedFieldStyles}</style>
+    </div>
+  );
+}
+
+function NoteProps({ el, onUpdate }: { el: NoteElement; onUpdate: Props["onUpdate"] }) {
+  return (
+    <div className="field-group">
+      <label className="field-label">Comment</label>
+      <textarea
+        className="note-textarea"
+        value={el.content}
+        placeholder="Type a note…"
+        onChange={(e) => onUpdate(el.id, { content: e.target.value })}
+        rows={4}
+      />
+      <label className="field-label">Marker color</label>
+      <input type="color" value={el.color} onChange={(e) => onUpdate(el.id, { color: e.target.value })} />
+      <style>{`
+        ${sharedFieldStyles}
+        .note-textarea {
+          width: 100%;
+          background: var(--bg-canvas);
+          border: 1px solid var(--border);
+          color: var(--text-primary);
+          border-radius: var(--radius-sm);
+          padding: 8px;
+          font-family: var(--font-ui);
+          font-size: 12.5px;
+          resize: vertical;
+        }
+      `}</style>
     </div>
   );
 }
