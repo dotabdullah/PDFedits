@@ -1,5 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { readFile, readTextFile, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { exists, mkdir, readFile, readTextFile, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { appDataDir, join, tempDir } from "@tauri-apps/api/path";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 
 export interface FileFilter {
   name: string;
@@ -86,6 +88,102 @@ export async function openTextFileDialog(filters: FileFilter[]): Promise<{ name:
   if (!selected || Array.isArray(selected)) return null;
   const text = await readTextFile(selected);
   return { name: fileNameFromPath(selected), path: selected, text };
+}
+
+/** Reads a known path directly (no dialog) — used for opening a Recent Document. Returns null outside Tauri. */
+export async function readBinaryFileAtPath(path: string): Promise<Uint8Array | null> {
+  if (!isTauriRuntime()) return null;
+  return readFile(path);
+}
+
+export async function readTextFileAtPath(path: string): Promise<string | null> {
+  if (!isTauriRuntime()) return null;
+  return readTextFile(path);
+}
+
+// --- Recent documents -------------------------------------------------
+// Small JSON file in the app's own data directory, e.g.
+// ~/.local/share/com.abdullah.pdfedits/recent-documents.json on Linux.
+
+export interface RecentDocumentEntry {
+  path: string;
+  name: string;
+  kind: "pdf" | "project";
+  openedAt: number; // Date.now()
+}
+
+const RECENT_DOCS_FILE = "recent-documents.json";
+const RECENT_DOCS_LIMIT = 15;
+
+async function recentDocsPath(): Promise<string> {
+  const dir = await appDataDir();
+  if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+  return join(dir, RECENT_DOCS_FILE);
+}
+
+/** Returns [] outside Tauri, on first run, or if the file is corrupted — never throws. */
+export async function loadRecentDocuments(): Promise<RecentDocumentEntry[]> {
+  if (!isTauriRuntime()) return [];
+  try {
+    const path = await recentDocsPath();
+    if (!(await exists(path))) return [];
+    const text = await readTextFile(path);
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Adds/moves an entry to the front, de-duplicated by path, capped at RECENT_DOCS_LIMIT. Silently no-ops outside Tauri or on write failure — this is a nice-to-have, not something that should ever block opening a file. */
+export async function addRecentDocument(entry: Omit<RecentDocumentEntry, "openedAt">): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    const current = await loadRecentDocuments();
+    const next = [{ ...entry, openedAt: Date.now() }, ...current.filter((e) => e.path !== entry.path)].slice(0, RECENT_DOCS_LIMIT);
+    const path = await recentDocsPath();
+    await writeTextFile(path, JSON.stringify(next));
+  } catch {
+    // best-effort only
+  }
+}
+
+export async function removeRecentDocument(path: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    const current = await loadRecentDocuments();
+    const next = current.filter((e) => e.path !== path);
+    const filePath = await recentDocsPath();
+    await writeTextFile(filePath, JSON.stringify(next));
+  } catch {
+    // best-effort only
+  }
+}
+
+export async function clearRecentDocuments(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    const filePath = await recentDocsPath();
+    await writeTextFile(filePath, JSON.stringify([]));
+  } catch {
+    // best-effort only
+  }
+}
+
+// --- Printing -----------------------------------------------------------
+// No custom print pipeline: write the current edits to a temp PDF and hand
+// off to the OS's default PDF viewer, whose own print dialog already does
+// page range/copies/printer selection well. Returns false if printing isn't
+// available (outside Tauri).
+
+export async function printPdfBytes(bytes: Uint8Array, suggestedName: string): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  const dir = await tempDir();
+  const safeName = suggestedName.replace(/[\\/:*?"<>|]/g, "_");
+  const path = await join(dir, `pdfedits-print-${Date.now()}-${safeName}`);
+  await writeFile(path, bytes);
+  await shellOpen(path);
+  return true;
 }
 
 export { isTauriRuntime };

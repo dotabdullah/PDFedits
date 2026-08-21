@@ -1,5 +1,5 @@
 import { AlignCenter, AlignLeft, AlignRight, Copy, SendToBack, BringToFront, Trash2 } from "lucide-react";
-import type { EditorElement, EllipseElement, HighlightElement, LineElement, NoteElement, RectangleElement, TextElement, TextMarkElement } from "../lib/types";
+import type { EditorElement, EllipseElement, FreehandElement, HighlightElement, LineElement, NoteElement, RectangleElement, TextElement, TextMarkElement } from "../lib/types";
 
 export interface DocInfo {
   fileName: string;
@@ -36,6 +36,7 @@ export function SidePanel({ selected, docInfo, onUpdate, onDelete, onDuplicate, 
       {selected?.kind === "text" && <TextProps el={selected} onUpdate={onUpdate} />}
       {(selected?.kind === "rectangle" || selected?.kind === "ellipse") && <ShapeProps el={selected} onUpdate={onUpdate} />}
       {selected?.kind === "line" && <LineProps el={selected} onUpdate={onUpdate} />}
+      {selected?.kind === "freehand" && <FreehandProps el={selected} onUpdate={onUpdate} />}
       {selected?.kind === "highlight" && <HighlightProps el={selected} onUpdate={onUpdate} />}
       {selected?.kind === "textmark" && <TextMarkProps el={selected} onUpdate={onUpdate} />}
       {selected?.kind === "note" && <NoteProps el={selected} onUpdate={onUpdate} />}
@@ -296,6 +297,19 @@ function LineProps({ el, onUpdate }: { el: LineElement; onUpdate: Props["onUpdat
       <input type="color" value={el.strokeColor} onChange={(e) => onUpdate(el.id, { strokeColor: e.target.value })} />
       <label className="field-label">Thickness</label>
       <input type="range" min={1} max={12} value={el.strokeWidth} onChange={(e) => onUpdate(el.id, { strokeWidth: Number(e.target.value) })} />
+      <style>{sharedFieldStyles}</style>
+    </div>
+  );
+}
+
+function FreehandProps({ el, onUpdate }: { el: FreehandElement; onUpdate: Props["onUpdate"] }) {
+  return (
+    <div className="field-group">
+      <label className="field-label">Color</label>
+      <input type="color" value={el.strokeColor} onChange={(e) => onUpdate(el.id, { strokeColor: e.target.value })} />
+      <label className="field-label">Thickness</label>
+      <input type="range" min={1} max={12} value={el.strokeWidth} onChange={(e) => onUpdate(el.id, { strokeWidth: Number(e.target.value) })} />
+      <RotationField el={el} onUpdate={onUpdate} />
       <style>{sharedFieldStyles}</style>
     </div>
   );

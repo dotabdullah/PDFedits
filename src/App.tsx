@@ -8,6 +8,7 @@ import { PagesPanel } from "./components/PagesPanel";
 import { StatusBar } from "./components/StatusBar";
 import { AboutModal } from "./components/AboutModal";
 import { SearchPanel } from "./components/SearchPanel";
+import { TabBar } from "./components/TabBar";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -24,18 +25,41 @@ import {
   searchDocument,
 } from "./lib/pdfEngine";
 import {
+  addRecentDocument,
+  clearRecentDocuments,
   openBinaryFileDialog,
   openTextFileDialog,
+  printPdfBytes,
+  readBinaryFileAtPath,
+  readTextFileAtPath,
+  removeRecentDocument,
+  loadRecentDocuments,
   saveBinaryFileAs,
   saveTextFileAs,
   writeBinaryToPath,
   writeTextToPath,
+  type RecentDocumentEntry,
 } from "./lib/nativeIO";
-import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, SearchOptions, ToolId, ZoomMode } from "./lib/types";
+import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, SearchOptions, ToolId, ViewMode, ZoomMode } from "./lib/types";
 
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.5.0";
 const RENDER_SCALE_BASE = 1.4;
 const HISTORY_LIMIT = 50;
+
+/** One open document's full session state — everything needed to fully restore it when switching tabs. */
+interface TabRecord {
+  id: string;
+  fileName: string;
+  pdfBytes: Uint8Array;
+  elements: EditorElement[];
+  currentPage: number;
+  zoom: number;
+  zoomMode: ZoomMode;
+  viewMode: ViewMode;
+  savedPdfPath: string | null;
+  savedProjectPath: string | null;
+  history: { past: EditorElement[][]; future: EditorElement[][] };
+}
 
 export default function App() {
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
@@ -45,6 +69,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(0);
   const [zoom, setZoom] = useState(RENDER_SCALE_BASE);
   const [zoomMode, setZoomMode] = useState<ZoomMode>("custom");
+  const [viewMode, setViewMode] = useState<ViewMode>("single");
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [elements, setElements] = useState<EditorElement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,6 +86,9 @@ export default function App() {
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const [searchOptions, setSearchOptions] = useState<SearchOptions>({ caseSensitive: false, wholeWord: false });
+  const [tabs, setTabs] = useState<TabRecord[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [recentDocs, setRecentDocs] = useState<RecentDocumentEntry[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -83,6 +111,14 @@ export default function App() {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
+  useEffect(() => {
+    loadRecentDocuments().then(setRecentDocs);
+  }, []);
+
+  function refreshRecentDocs() {
+    loadRecentDocuments().then(setRecentDocs);
+  }
+
   function toggleFullscreen() {
     if (document.fullscreenElement) {
       document.exitFullscreen();
@@ -91,25 +127,73 @@ export default function App() {
     }
   }
 
-  const openFile = useCallback(async (bytes: Uint8Array, name: string, restoredElements: EditorElement[] = []) => {
-    const doc = await loadPdfDocument(bytes);
-    setPdfBytes(bytes);
-    setPdfDoc(doc);
-    setFileName(name);
-    setNumPages(doc.numPages);
-    setCurrentPage((prev) => Math.min(prev, doc.numPages - 1) || 0);
-    setElements(restoredElements);
-    setSelectedId(null);
-    setSavedPdfPath(null);
-    setSavedProjectPath(null);
-    pastRef.current = [];
-    futureRef.current = [];
-    setHistoryTick((t) => t + 1);
-  }, []);
+  /** Builds a TabRecord snapshot of whatever's currently live, for storing away when switching to another tab. Returns null if there's no document open. */
+  function snapshotActiveTab(id: string): TabRecord | null {
+    if (!pdfBytes) return null;
+    return {
+      id,
+      fileName: fileName ?? "document.pdf",
+      pdfBytes,
+      elements,
+      currentPage,
+      zoom,
+      zoomMode,
+      viewMode,
+      savedPdfPath,
+      savedProjectPath,
+      history: { past: pastRef.current, future: futureRef.current },
+    };
+  }
 
-  /** Full reset variant of openFile used for brand-new documents (always jumps to page 0). */
-  async function openFreshFile(bytes: Uint8Array, name: string, restoredElements: EditorElement[] = []) {
+  async function loadTabIntoLiveState(rec: TabRecord) {
+    const doc = await loadPdfDocument(rec.pdfBytes);
+    setPdfBytes(rec.pdfBytes);
+    setPdfDoc(doc);
+    setFileName(rec.fileName);
+    setNumPages(doc.numPages);
+    setCurrentPage(Math.min(rec.currentPage, doc.numPages - 1));
+    setElements(rec.elements);
+    setSelectedId(null);
+    setZoom(rec.zoom);
+    setZoomMode(rec.zoomMode);
+    setViewMode(rec.viewMode);
+    setSavedPdfPath(rec.savedPdfPath);
+    setSavedProjectPath(rec.savedProjectPath);
+    pastRef.current = rec.history.past;
+    futureRef.current = rec.history.future;
+    setHistoryTick((t) => t + 1);
+  }
+
+  async function switchToTab(targetId: string) {
+    if (targetId === activeTabId) return;
+    const target = tabs.find((t) => t.id === targetId);
+    if (!target) return;
+    const snap = activeTabId ? snapshotActiveTab(activeTabId) : null;
+    setTabs((prev) => (snap ? prev.map((t) => (t.id === activeTabId ? snap : t)) : prev));
+    setActiveTabId(targetId);
+    await loadTabIntoLiveState(target);
+  }
+
+  /** Opens a document as a brand-new tab. The currently active tab (if any) is snapshotted first so its state survives the switch. */
+  async function openNewTab(bytes: Uint8Array, name: string, restoredElements: EditorElement[] = []) {
+    const snap = activeTabId ? snapshotActiveTab(activeTabId) : null;
+    const id = crypto.randomUUID();
     const doc = await loadPdfDocument(bytes);
+    const record: TabRecord = {
+      id,
+      fileName: name,
+      pdfBytes: bytes,
+      elements: restoredElements,
+      currentPage: 0,
+      zoom: RENDER_SCALE_BASE,
+      zoomMode: "custom",
+      viewMode: "single",
+      savedPdfPath: null,
+      savedProjectPath: null,
+      history: { past: [], future: [] },
+    };
+    setTabs((prev) => [...(snap ? prev.map((t) => (t.id === activeTabId ? snap : t)) : prev), record]);
+    setActiveTabId(id);
     setPdfBytes(bytes);
     setPdfDoc(doc);
     setFileName(name);
@@ -117,6 +201,9 @@ export default function App() {
     setCurrentPage(0);
     setElements(restoredElements);
     setSelectedId(null);
+    setZoom(RENDER_SCALE_BASE);
+    setZoomMode("custom");
+    setViewMode("single");
     setSavedPdfPath(null);
     setSavedProjectPath(null);
     pastRef.current = [];
@@ -124,20 +211,43 @@ export default function App() {
     setHistoryTick((t) => t + 1);
   }
 
+  /** Kept as the name every existing call site already uses — opening "fresh" always means a new tab now. */
+  const openFreshFile = openNewTab;
+
+  function closeTab(id: string) {
+    const isActive = id === activeTabId;
+    const record = tabs.find((t) => t.id === id) ?? (isActive ? snapshotActiveTab(id) : null);
+    const hasEdits = isActive ? elements.length > 0 : (record?.elements.length ?? 0) > 0;
+    if (hasEdits && !window.confirm("Close this tab? Any unsaved edits will be lost.")) return;
+
+    const remaining = tabs.filter((t) => t.id !== id);
+    setTabs(remaining);
+
+    if (!isActive) return;
+
+    if (remaining.length === 0) {
+      setPdfBytes(null);
+      setPdfDoc(null);
+      setFileName(null);
+      setNumPages(0);
+      setCurrentPage(0);
+      setElements([]);
+      setSelectedId(null);
+      setSavedPdfPath(null);
+      setSavedProjectPath(null);
+      pastRef.current = [];
+      futureRef.current = [];
+      setActiveTabId(null);
+      setHistoryTick((t) => t + 1);
+    } else {
+      const next = remaining[remaining.length - 1];
+      setActiveTabId(next.id);
+      loadTabIntoLiveState(next);
+    }
+  }
+
   function closeDocument() {
-    if (elements.length > 0 && !window.confirm("Close this PDF? Any unsaved edits will be lost.")) return;
-    setPdfBytes(null);
-    setPdfDoc(null);
-    setFileName(null);
-    setNumPages(0);
-    setCurrentPage(0);
-    setElements([]);
-    setSelectedId(null);
-    setSavedPdfPath(null);
-    setSavedProjectPath(null);
-    pastRef.current = [];
-    futureRef.current = [];
-    setHistoryTick((t) => t + 1);
+    if (activeTabId) closeTab(activeTabId);
   }
 
   function resetAllEdits() {
@@ -184,6 +294,7 @@ export default function App() {
       const native = await openBinaryFileDialog([{ name: "PDF", extensions: ["pdf"] }]);
       if (native) {
         await openFreshFile(native.bytes, native.name);
+        addRecentDocument({ path: native.path, name: native.name, kind: "pdf" }).then(refreshRecentDocs);
         return;
       }
     } catch (err) {
@@ -524,7 +635,8 @@ export default function App() {
     if (!pdfBytes) return;
     const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
 
-    const canvas = document.querySelector(".pdf-canvas") as HTMLCanvasElement | null;
+    // Continuous mode can have multiple .pdf-canvas elements at once — target the current page specifically.
+    const canvas = document.querySelector(`.pdf-canvas[data-page-index="${currentPage}"]`) as HTMLCanvasElement | null;
     if (!canvas) return;
     const composite = document.createElement("canvas");
     composite.width = canvas.width;
@@ -592,6 +704,19 @@ export default function App() {
           ctx.font = "11px sans-serif";
           ctx.fillText(el.content, el.x + markerSize + 4, el.y + markerSize / 2 + 4, 220);
         }
+      } else if (el.kind === "freehand") {
+        ctx.strokeStyle = el.strokeColor;
+        ctx.lineWidth = el.strokeWidth;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        el.points.forEach((p, i) => {
+          const px = el.x + p.x * el.width;
+          const py = el.y + p.y * el.height;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
       }
     }
     const blob = await canvasToImageBytes(composite, format);
@@ -660,6 +785,7 @@ export default function App() {
     const bytes = base64ToBytes(project.pdfBase64);
     await openFreshFile(bytes, project.fileName, project.elements ?? []);
     setSavedProjectPath(path);
+    if (path) addRecentDocument({ path, name: project.fileName, kind: "project" }).then(refreshRecentDocs);
   }
 
   async function handleOpenProjectClick() {
@@ -686,6 +812,39 @@ export default function App() {
       window.alert(`Couldn't open that project file.\n\n${errorMessage(err)}`);
     }
     e.target.value = "";
+  }
+
+  async function handleOpenRecent(entry: RecentDocumentEntry) {
+    try {
+      if (entry.kind === "pdf") {
+        const bytes = await readBinaryFileAtPath(entry.path);
+        if (!bytes) throw new Error("Reading files directly isn't available outside the desktop app.");
+        await openFreshFile(bytes, entry.name);
+      } else {
+        const text = await readTextFileAtPath(entry.path);
+        if (!text) throw new Error("Reading files directly isn't available outside the desktop app.");
+        await loadProjectFromText(text, entry.path);
+      }
+      addRecentDocument(entry).then(refreshRecentDocs); // move it to the front
+    } catch (err) {
+      const missing = window.confirm(
+        `Couldn't open "${entry.name}".\n\n${errorMessage(err)}\n\nRemove it from Recent Documents?`
+      );
+      if (missing) removeRecentDocument(entry.path).then(refreshRecentDocs);
+    }
+  }
+
+  async function handlePrint() {
+    const outBytes = await buildEditedPdfBytes();
+    if (!outBytes) return;
+    try {
+      const ok = await printPdfBytes(outBytes, fileName ?? "document.pdf");
+      if (!ok) {
+        window.alert("Printing needs the desktop app — use Save PDF and print from your PDF viewer instead.");
+      }
+    } catch (err) {
+      window.alert(`Couldn't open the system print dialog.\n\n${errorMessage(err)}`);
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -807,6 +966,7 @@ export default function App() {
         u: "underline",
         k: "strikethrough",
         n: "note",
+        d: "draw",
       };
       const tool = shortcuts[e.key.toLowerCase()];
       if (tool && pdfDoc) handleToolSelect(tool);
@@ -845,10 +1005,23 @@ export default function App() {
         onSavePdf={handleSavePdf}
         onSavePdfAs={handleSavePdfAs}
         onSaveProject={handleSaveProject}
+        onPrint={handlePrint}
         onUndo={undo}
         onRedo={redo}
         onToggleSearch={() => setShowSearch((s) => !s)}
         onToggleSettings={() => setShowAbout(true)}
+      />
+
+      <TabBar
+        tabs={tabs.map((t) => ({
+          id: t.id,
+          fileName: t.id === activeTabId ? fileName ?? t.fileName : t.fileName,
+          hasEdits: (t.id === activeTabId ? elements : t.elements).length > 0,
+        }))}
+        activeTabId={activeTabId}
+        onSelectTab={switchToTab}
+        onCloseTab={closeTab}
+        onNewTab={handleOpenClick}
       />
 
       <ToolsBar
@@ -875,6 +1048,8 @@ export default function App() {
         onEraseThicknessChange={setEraseThickness}
         canReset={elements.length > 0}
         onReset={resetAllEdits}
+        viewMode={viewMode}
+        onToggleViewMode={() => setViewMode((m) => (m === "single" ? "continuous" : "single"))}
       />
 
       <PagesPanel
@@ -895,6 +1070,8 @@ export default function App() {
         <PdfCanvas
           pdfDoc={pdfDoc}
           pageIndex={currentPage}
+          numPages={numPages}
+          viewMode={viewMode}
           zoom={renderScale}
           zoomMode={zoomMode}
           onZoomChange={setZoom}
@@ -913,7 +1090,7 @@ export default function App() {
           highlightMatch={searchMatches[activeMatchIndex] ?? null}
         />
       ) : (
-        <EmptyState onOpen={handleOpenClick} />
+        <EmptyState onOpen={handleOpenClick} recentDocs={recentDocs} onOpenRecent={handleOpenRecent} onClearRecent={() => clearRecentDocuments().then(refreshRecentDocs)} />
       )}
 
       <SidePanel
@@ -979,7 +1156,17 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
-function EmptyState({ onOpen }: { onOpen: () => void }) {
+function EmptyState({
+  onOpen,
+  recentDocs,
+  onOpenRecent,
+  onClearRecent,
+}: {
+  onOpen: () => void;
+  recentDocs: RecentDocumentEntry[];
+  onOpenRecent: (entry: RecentDocumentEntry) => void;
+  onClearRecent: () => void;
+}) {
   return (
     <div className="empty-state">
       <div className="empty-icon">
@@ -995,6 +1182,26 @@ function EmptyState({ onOpen }: { onOpen: () => void }) {
       <button className="empty-open" onClick={onOpen}>
         Open PDF
       </button>
+
+      {recentDocs.length > 0 && (
+        <div className="recent-docs">
+          <div className="recent-header">
+            <span>Recent</span>
+            <button className="recent-clear" onClick={onClearRecent}>
+              Clear
+            </button>
+          </div>
+          <div className="recent-list">
+            {recentDocs.map((entry) => (
+              <button key={entry.path} className="recent-item" onClick={() => onOpenRecent(entry)} title={entry.path}>
+                <span className="recent-name">{entry.name}</span>
+                <span className="recent-kind">{entry.kind === "project" ? ".pdfedits" : "PDF"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <style>{`
         .empty-state {
           grid-area: canvas;
@@ -1038,6 +1245,68 @@ function EmptyState({ onOpen }: { onOpen: () => void }) {
           border-radius: 4px;
           padding: 1px 6px;
           font-size: 11.5px;
+        }
+        .recent-docs {
+          margin-top: 30px;
+          width: 320px;
+          text-align: left;
+          background: var(--bg-panel);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          overflow: hidden;
+        }
+        .recent-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 8px 12px;
+          border-bottom: 1px solid var(--border);
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-tertiary);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .recent-clear {
+          all: unset;
+          cursor: pointer;
+          font-size: 10.5px;
+          color: var(--accent-blue);
+          text-transform: none;
+          letter-spacing: 0;
+          font-weight: 500;
+        }
+        .recent-clear:hover { text-decoration: underline; }
+        .recent-list {
+          max-height: 220px;
+          overflow-y: auto;
+        }
+        .recent-item {
+          all: unset;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          width: 100%;
+          box-sizing: border-box;
+          padding: 9px 12px;
+          border-bottom: 1px solid var(--border);
+          font-size: 12.5px;
+        }
+        .recent-item:last-child { border-bottom: none; }
+        .recent-item:hover { background: var(--accent-blue-soft); }
+        .recent-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: var(--text-primary);
+        }
+        .recent-kind {
+          flex-shrink: 0;
+          font-family: var(--font-mono);
+          font-size: 10px;
+          color: var(--text-tertiary);
         }
         .empty-open {
           background: var(--accent-blue);

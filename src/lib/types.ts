@@ -11,7 +11,10 @@ export type ToolId =
   | "highlight"
   | "underline"
   | "strikethrough"
-  | "note";
+  | "note"
+  | "draw";
+
+export type ViewMode = "single" | "continuous";
 
 export interface BaseElement {
   id: string;
@@ -93,6 +96,16 @@ export interface NoteElement extends BaseElement {
   color: string;
 }
 
+/** Freehand pencil stroke. Points are normalized to a 0–1 range relative to
+ *  the element's own bbox (width/height), so the standard resize handle can
+ *  scale the whole stroke just by scaling the bbox — no separate path-scaling logic needed. */
+export interface FreehandElement extends BaseElement {
+  kind: "freehand";
+  points: { x: number; y: number }[];
+  strokeColor: string;
+  strokeWidth: number;
+}
+
 export type EditorElement =
   | TextElement
   | ImageElement
@@ -103,7 +116,8 @@ export type EditorElement =
   | LineElement
   | HighlightElement
   | TextMarkElement
-  | NoteElement;
+  | NoteElement
+  | FreehandElement;
 
 export interface PageSize {
   width: number;

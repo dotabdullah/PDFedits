@@ -47,6 +47,7 @@
   --pages-width: 220px;
   --properties-width: 280px;
   --header-height: 48px;
+  --tabbar-height: 30px;
   --tools-height: 44px;
   --status-height: 30px;
   --radius-sm: 5px;
@@ -93,9 +94,10 @@ button {
   position: relative;
   display: grid;
   grid-template-columns: var(--pages-width) 1fr var(--properties-width);
-  grid-template-rows: var(--header-height) var(--tools-height) 1fr var(--status-height);
+  grid-template-rows: var(--header-height) var(--tabbar-height) var(--tools-height) 1fr var(--status-height);
   grid-template-areas:
     "header header header"
+    "tabbar tabbar tabbar"
     "tools  tools  tools"
     "pages  canvas properties"
     "status status status";

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main PDFedits window: native open/save dialogs and reading/writing the files the user picks. Scope is intentionally broad ('**' = anywhere) — this is a single-user offline desktop app, the only files it ever touches are ones the person explicitly picked via a native file dialog, and narrower per-folder scoping (Documents/Downloads/Home only) was the suspected cause of 'Couldn't open project file' errors when a .pdfedits file lived somewhere else, e.g. a synced or external drive.",
+  "description": "Capabilities for the main PDFedits window: native open/save dialogs, reading/writing the files the user picks, a small app-data file for recent documents, and opening an exported PDF in the system's default viewer for printing. Scope is intentionally broad ('**' = anywhere) — this is a single-user offline desktop app, the only files it ever touches are ones the person explicitly picked via a native file dialog (or its own small recent-documents file), and narrower per-folder scoping (Documents/Downloads/Home only) was the suspected cause of 'Couldn't open project file' errors when a .pdfedits file lived somewhere else, e.g. a synced or external drive.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -22,6 +22,15 @@
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [{ "path": "**" }]
-    }
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [{ "path": "**" }]
+    },
+    "shell:allow-open"
   ]
 }

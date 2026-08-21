@@ -2,6 +2,33 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.5.0] — 2026-08-19
+
+Multiple open documents, recent documents, and printing — the last items from the original feature request — plus a `CLAUDE.md` project guide for future agentic sessions (Claude Code/Cowork) working on this codebase.
+
+### Added
+- **CLAUDE.md** — architecture overview, the overlay-based-editing rationale, the coordinate system, file-by-file responsibilities, conventions (undo/redo, the double-stopPropagation click pattern, the "verify pdf-lib assumptions with a live Node script" habit), and known gaps. Read this first if you're an agent picking up this repo.
+- **Multiple open documents** — a tab bar under the header. Opening a PDF while one is already open creates a new tab rather than replacing it; each tab keeps its own elements, undo/redo history, zoom, and view mode independently. Implemented as a "snapshot on switch" model — the active tab's live state is the source of truth; switching tabs snapshots it into a lightweight record and reloads the target tab's record — rather than keeping every tab's `pdf.js` document loaded simultaneously, to keep memory use reasonable with several tabs open.
+- **Recent documents** — the last 15 opened PDFs/projects, shown on the empty-state screen, stored in a small JSON file in the app's own data directory (not visible-file-picker history — see below for why). Handles the file having moved or been deleted gracefully: offers to remove it from the list rather than failing silently.
+- **Printing** — no custom print pipeline. Exports current edits to a temp PDF and opens it with the OS's default PDF viewer, so page range/copies/printer selection all come from a viewer that already does this well. Uses the new `@tauri-apps/plugin-shell` dependency (`shell:allow-open` permission, scoped to opening — not arbitrary command execution).
+
+### Notes
+- Recent documents storage was chosen over relying on OS-level "recent files" integration (e.g. Windows Jump Lists, macOS recent items) because that requires deeper per-platform native integration than the current Tauri setup does — this is a simpler, cross-platform, in-app equivalent. Might be worth revisiting for closer OS integration later.
+- Switching away from a tab does not keep its `pdf.js` document instance loaded — reopening it re-parses from the stored bytes. This trades a small perf cost on tab-switch for materially lower memory use with multiple tabs open, which seemed like the right tradeoff for a desktop app.
+
+## [0.4.1] — 2026-08-18
+
+Continuous scroll and freehand drawing — the two items deliberately held back from 0.4.0 for being architecturally bigger and riskier than everything else on the list. Both are additive: single-page mode is still the default and works exactly as before.
+
+### Added
+- **Continuous scroll** — a new view-mode toggle in the tools bar switches between single-page view (default) and a scrollable stack of every page. Pages lazily render as they scroll near the viewport (via IntersectionObserver, ~800px look-ahead) rather than all rendering at once, so this stays reasonable on longer documents. Navigation — Pages panel clicks, go-to-page, First/Last, search results — all scroll the target page into view in continuous mode.
+- **Freehand pencil drawing** — click-drag to draw; strokes are selectable, movable, resizable (the whole stroke scales with its bounding box), and colorable/adjustable-thickness from the Properties panel, same as every other element.
+
+### Scoping notes (read before relying on these)
+- **Continuous scroll does not auto-update "current page" as you scroll.** This was a deliberate choice: wiring scroll position back to `currentPage` needs IntersectionObserver-based tracking with real feedback-loop risk against the "scroll to page on navigation" behavior, for a feature whose main value (seeing many pages at once) doesn't actually depend on that tracking. The Pages panel won't highlight the page you're currently looking at while free-scrolling — only explicit navigation updates it. May revisit if this turns out to matter more than expected.
+- **Fit Page zoom mode falls back to Fit Width's math in continuous mode** — "fit the current page to the viewport height" doesn't have a clean meaning when several pages are visible in a column at once.
+- Very long documents (hundreds of pages) haven't been performance-tested against continuous mode — the lazy-render approach should hold up reasonably, but this wasn't validated against a large real-world PDF.
+
 ## [0.4.0] — 2026-08-16
 
 Full page management and dedicated annotation tools. Continuous scroll and freehand drawing — the two riskiest, most architecturally different items from the original request — are deliberately not in this release; see "Not in this release" below for why, and 0.4.1 for when.

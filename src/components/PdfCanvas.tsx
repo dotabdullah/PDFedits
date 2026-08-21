@@ -3,14 +3,12 @@ import * as pdfjsLib from "pdfjs-dist";
 import { extractTextItems, renderPage, sampleBackgroundColor } from "../lib/pdfEngine";
 import type {
   EditorElement,
-  EllipseElement,
   ExistingTextItem,
-  LineElement,
   PageSize,
-  RectangleElement,
   SearchMatch,
   TextElement,
   ToolId,
+  ViewMode,
   ZoomMode,
 } from "../lib/types";
 
@@ -19,13 +17,29 @@ const MARK_TOOLS: ToolId[] = ["highlight", "underline", "strikethrough"];
 const DEFAULT_STROKE = "#1f2430";
 const DEFAULT_HIGHLIGHT = "#ffe066";
 const DEFAULT_NOTE_COLOR = "#f2b900";
+const DEFAULT_DRAW_COLOR = "#e0393e";
+const DEFAULT_DRAW_WIDTH = 3;
 
-interface Props {
-  pdfDoc: pdfjsLib.PDFDocumentProxy | null;
-  pageIndex: number;
-  zoom: number;
-  zoomMode: ZoomMode;
-  onZoomChange: (z: number) => void;
+type DrawableKind = "rectangle" | "ellipse" | "line" | "highlight" | "underline" | "strikethrough";
+
+interface DraftShape {
+  kind: DrawableKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  descending: boolean;
+}
+
+type DragState =
+  | { mode: "move"; id: string; offsetX: number; offsetY: number }
+  | { mode: "resize"; id: string; startX: number; startY: number; startWidth: number; startHeight: number }
+  | { mode: "edit-width"; startX: number; startWidth: number }
+  | { mode: "draw-shape"; kind: DrawableKind; startX: number; startY: number }
+  | { mode: "freehand" }
+  | { mode: "pan"; startX: number; startY: number; startScrollLeft: number; startScrollTop: number };
+
+interface SharedProps {
   activeTool: ToolId;
   elements: EditorElement[];
   eraseWidth: number;
@@ -41,30 +55,126 @@ interface Props {
   highlightMatch: SearchMatch | null;
 }
 
-type DragState =
-  | { mode: "move"; id: string; offsetX: number; offsetY: number }
-  | { mode: "resize"; id: string; startX: number; startY: number; startWidth: number; startHeight: number }
-  | { mode: "edit-width"; startX: number; startWidth: number }
-  | { mode: "draw-shape"; kind: DrawableKind; startX: number; startY: number }
-  | { mode: "pan"; startX: number; startY: number; startScrollLeft: number; startScrollTop: number };
-
-type DrawableKind = "rectangle" | "ellipse" | "line" | "highlight" | "underline" | "strikethrough";
-
-interface DraftShape {
-  kind: DrawableKind;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  descending: boolean;
+interface Props extends SharedProps {
+  pdfDoc: pdfjsLib.PDFDocumentProxy | null;
+  pageIndex: number;
+  numPages: number;
+  viewMode: ViewMode;
+  zoom: number;
+  zoomMode: ZoomMode;
+  onZoomChange: (z: number) => void;
 }
 
-export function PdfCanvas({
+/** Top-level canvas area: owns the single shared scroll container, and either
+ *  renders one PageBlock (single-page mode) or stacks every page's PageBlock
+ *  for continuous scroll. Navigation (Pages panel, search, go-to-page) scrolls
+ *  the target page into view in continuous mode — but scrolling never updates
+ *  `currentPage` on its own (deliberately not wired to avoid IntersectionObserver
+ *  feedback-loop fragility for comparatively low value — see README). */
+export function PdfCanvas({ pdfDoc, pageIndex, numPages, viewMode, zoom, zoomMode, onZoomChange, ...shared }: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const lastScrolledPage = useRef<number | null>(null);
+  const [scrollRatio, setScrollRatio] = useState(0);
+
+  useEffect(() => {
+    if (viewMode !== "continuous") return;
+    if (lastScrolledPage.current === pageIndex) return;
+    lastScrolledPage.current = pageIndex;
+    pageRefs.current.get(pageIndex)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [pageIndex, viewMode]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    setScrollRatio(max > 0 ? el.scrollTop / max : 0);
+  }
+
+  if (!pdfDoc) return null;
+
+  return (
+    <div className={`canvas-stage ${shared.activeTool === "pan" ? "is-pannable" : ""}`} ref={scrollRef} onScroll={handleScroll}>
+      {viewMode === "single" ? (
+        <PageBlock pdfDoc={pdfDoc} pageIndex={pageIndex} zoom={zoom} zoomMode={zoomMode} onZoomChange={onZoomChange} scrollRef={scrollRef} {...shared} />
+      ) : (
+        Array.from({ length: numPages }, (_, i) => (
+          <div
+            key={i}
+            className="continuous-slot"
+            ref={(el) => {
+              if (el) pageRefs.current.set(i, el);
+              else pageRefs.current.delete(i);
+            }}
+          >
+            <PageBlock pdfDoc={pdfDoc} pageIndex={i} zoom={zoom} zoomMode={zoomMode} onZoomChange={onZoomChange} scrollRef={scrollRef} lazy {...shared} />
+          </div>
+        ))
+      )}
+
+      {viewMode === "single" && (
+        <div className="page-gauge" aria-hidden="true">
+          <div className="page-gauge-track">
+            <div className="page-gauge-thumb" style={{ top: `calc(${scrollRatio * 100}% - 10px)` }} />
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .canvas-stage {
+          grid-area: canvas;
+          background: var(--bg-canvas);
+          overflow: auto;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 40px 56px 40px 24px;
+          position: relative;
+        }
+        .canvas-stage.is-pannable { cursor: grab; }
+        .canvas-stage.is-pannable:active { cursor: grabbing; }
+        .continuous-slot {
+          margin-bottom: 28px;
+        }
+        .page-gauge {
+          position: fixed;
+          right: calc(var(--properties-width) + 18px);
+          top: calc(var(--header-height) + var(--tabbar-height) + var(--tools-height) + 24px);
+          bottom: calc(var(--status-height) + 24px);
+          width: 3px;
+        }
+        .page-gauge-track {
+          position: relative;
+          height: 100%;
+          background: var(--border);
+          border-radius: 2px;
+        }
+        .page-gauge-thumb {
+          position: absolute;
+          left: -3px;
+          width: 9px;
+          height: 20px;
+          background: var(--accent-blue);
+          border-radius: 2px;
+        }
+        @media (max-width: 900px) {
+          .page-gauge { display: none; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/** One page's canvas + overlay elements + existing-text edit layer. Used directly
+ *  in single-page mode, and once per page (lazily rendered) in continuous mode. */
+function PageBlock({
   pdfDoc,
   pageIndex,
   zoom,
   zoomMode,
   onZoomChange,
+  scrollRef,
+  lazy,
   activeTool,
   elements,
   eraseWidth,
@@ -78,27 +188,49 @@ export function PdfCanvas({
   onConsumePendingImage,
   onCommitTextEdit,
   highlightMatch,
-}: Props) {
+}: SharedProps & {
+  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  pageIndex: number;
+  zoom: number;
+  zoomMode: ZoomMode;
+  onZoomChange: (z: number) => void;
+  scrollRef: React.RefObject<HTMLDivElement>;
+  lazy?: boolean;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState<PageSize>({ width: 0, height: 0 });
-  const [scrollRatio, setScrollRatio] = useState(0);
   const [existingText, setExistingText] = useState<ExistingTextItem[]>([]);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingWidth, setEditingWidth] = useState<number | null>(null);
   const [draftShape, setDraftShape] = useState<DraftShape | null>(null);
+  const [freehandPoints, setFreehandPoints] = useState<{ x: number; y: number }[] | null>(null);
+  const [hasEnteredView, setHasEnteredView] = useState(!lazy);
   const dragState = useRef<DragState | null>(null);
   const cancelEditRef = useRef(false);
 
+  // Lazy-render: only draw this page's canvas once it (or its neighborhood) has scrolled into view.
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return;
+    if (!lazy || hasEnteredView || !wrapRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setHasEnteredView(true);
+      },
+      { root: scrollRef.current, rootMargin: "800px 0px" }
+    );
+    observer.observe(wrapRef.current);
+    return () => observer.disconnect();
+  }, [lazy, hasEnteredView, scrollRef]);
+
+  useEffect(() => {
+    if (!hasEnteredView || !canvasRef.current) return;
     let cancelled = false;
 
     async function run() {
       let scale = zoom;
       if (zoomMode !== "custom") {
-        const page = await pdfDoc!.getPage(pageIndex + 1);
+        const page = await pdfDoc.getPage(pageIndex + 1);
         const native = page.getViewport({ scale: 1 });
         const stage = scrollRef.current;
         const availW = (stage?.clientWidth ?? 900) - 90;
@@ -106,13 +238,13 @@ export function PdfCanvas({
         if (zoomMode === "fit-width") scale = availW / native.width;
         else if (zoomMode === "fit-page") scale = Math.min(availW / native.width, availH / native.height);
         else if (zoomMode === "actual") scale = 1;
-        if (Math.abs(scale - zoom) > 0.005) onZoomChange(scale);
+        if (pageIndex === 0 && Math.abs(scale - zoom) > 0.005) onZoomChange(scale);
       }
       if (cancelled || !canvasRef.current) return;
-      const size = await renderPage(pdfDoc!, pageIndex, canvasRef.current, scale);
+      const size = await renderPage(pdfDoc, pageIndex, canvasRef.current, scale);
       if (cancelled) return;
       setPageSize(size);
-      const items = await extractTextItems(pdfDoc!, pageIndex, scale);
+      const items = await extractTextItems(pdfDoc, pageIndex, scale);
       if (cancelled) return;
       setExistingText(items);
       setEditingItemId(null);
@@ -122,13 +254,10 @@ export function PdfCanvas({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfDoc, pageIndex, zoom, zoomMode]);
+  }, [pdfDoc, pageIndex, zoom, zoomMode, hasEnteredView]);
 
   const pageElements = elements.filter((e) => e.page === pageIndex);
-
-  const replacedIds = new Set(
-    pageElements.filter((e) => e.id.endsWith("-erase")).map((e) => e.id.replace(/-erase$/, ""))
-  );
+  const replacedIds = new Set(pageElements.filter((e) => e.id.endsWith("-erase")).map((e) => e.id.replace(/-erase$/, "")));
   const editableTextItems = existingText.filter((item) => !replacedIds.has(item.id));
 
   function handleExistingTextClick(e: React.MouseEvent, item: ExistingTextItem) {
@@ -200,6 +329,12 @@ export function PdfCanvas({
   }
 
   function handleOverlayMouseDown(e: React.MouseEvent) {
+    if (activeTool === "draw") {
+      const { x, y } = overlayPoint(e);
+      dragState.current = { mode: "freehand" };
+      setFreehandPoints([{ x, y }]);
+      return;
+    }
     if (SHAPE_TOOLS.includes(activeTool)) {
       const { x, y } = overlayPoint(e);
       const kind = activeTool as DrawableKind;
@@ -209,7 +344,7 @@ export function PdfCanvas({
   }
 
   function handleCanvasClick(e: React.MouseEvent) {
-    if (SHAPE_TOOLS.includes(activeTool) || activeTool === "pan") return; // handled by mousedown/drag instead
+    if (SHAPE_TOOLS.includes(activeTool) || activeTool === "pan" || activeTool === "draw") return;
     const { x, y } = overlayPoint(e);
 
     if (activeTool === "text") {
@@ -324,6 +459,12 @@ export function PdfCanvas({
       return;
     }
 
+    if (state.mode === "freehand") {
+      const { x, y } = overlayPoint(e);
+      setFreehandPoints((prev) => (prev ? [...prev, { x, y }] : [{ x, y }]));
+      return;
+    }
+
     const rect = overlayRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -351,11 +492,13 @@ export function PdfCanvas({
   function endDrag() {
     const state = dragState.current;
     if (state?.mode === "draw-shape" && draftShape) {
-      if (draftShape.width > 4 || draftShape.height > 4) {
-        commitShape(draftShape);
-      }
+      if (draftShape.width > 4 || draftShape.height > 4) commitShape(draftShape);
+      setDraftShape(null);
     }
-    setDraftShape(null);
+    if (state?.mode === "freehand" && freehandPoints) {
+      commitFreehand(freehandPoints);
+      setFreehandPoints(null);
+    }
     dragState.current = null;
   }
 
@@ -378,127 +521,136 @@ export function PdfCanvas({
     onSelectElement(id);
   }
 
-  function handleScroll() {
-    const el = scrollRef.current;
-    if (!el) return;
-    const max = el.scrollHeight - el.clientHeight;
-    setScrollRatio(max > 0 ? el.scrollTop / max : 0);
+  function commitFreehand(points: { x: number; y: number }[]) {
+    if (points.length < 2) return;
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const width = Math.max(Math.max(...xs) - minX, 4);
+    const height = Math.max(Math.max(...ys) - minY, 4);
+    if (width < 4 && height < 4) return;
+    const id = crypto.randomUUID();
+    onAddElement({
+      id,
+      kind: "freehand",
+      page: pageIndex,
+      x: minX,
+      y: minY,
+      width,
+      height,
+      points: points.map((p) => ({ x: (p.x - minX) / width, y: (p.y - minY) / height })),
+      strokeColor: DEFAULT_DRAW_COLOR,
+      strokeWidth: DEFAULT_DRAW_WIDTH,
+    });
+    onSelectElement(id);
   }
 
-  const stageCursor = activeTool === "pan" ? "grab" : undefined;
+  if (!hasEnteredView) {
+    // Reserve roughly the right amount of space so the scrollbar/scroll position
+    // doesn't jump around wildly as pages lazily render in continuous mode.
+    return <div ref={wrapRef} className="page-placeholder" style={{ width: 600, height: 800 }} />;
+  }
 
   return (
-    <div className={`canvas-stage ${activeTool === "pan" ? "is-pannable" : ""}`} ref={scrollRef} onScroll={handleScroll} style={{ cursor: stageCursor }}>
+    <div
+      ref={wrapRef}
+      className="page-wrap"
+      style={{ width: pageSize.width, height: pageSize.height }}
+      onMouseDown={startPan}
+      onMouseMove={onDrag}
+      onMouseUp={endDrag}
+      onMouseLeave={endDrag}
+    >
+      <canvas ref={canvasRef} className="pdf-canvas" data-page-index={pageIndex} />
       <div
-        className="page-wrap"
+        ref={overlayRef}
+        className={`overlay ${SHAPE_TOOLS.includes(activeTool) || activeTool === "draw" ? "overlay-crosshair" : ""}`}
         style={{ width: pageSize.width, height: pageSize.height }}
-        onMouseDown={startPan}
-        onMouseMove={onDrag}
-        onMouseUp={endDrag}
-        onMouseLeave={endDrag}
+        onMouseDown={handleOverlayMouseDown}
+        onClick={handleCanvasClick}
       >
-        <canvas ref={canvasRef} className="pdf-canvas" />
-        <div
-          ref={overlayRef}
-          className={`overlay ${SHAPE_TOOLS.includes(activeTool) ? "overlay-crosshair" : ""}`}
-          style={{ width: pageSize.width, height: pageSize.height }}
-          onMouseDown={handleOverlayMouseDown}
-          onClick={handleCanvasClick}
-        >
-          {pageElements.map((el) => (
-            <OverlayElement
-              key={el.id}
-              el={el}
-              selected={selectedId === el.id}
-              onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-              onClick={handleElementClick}
-              onResizeStart={(e) => startResize(e, el.id)}
-              onChangeText={(text) => onUpdateElement(el.id, { content: text } as Partial<TextElement>)}
-            />
-          ))}
-          {draftShape && <ShapePreview shape={draftShape} />}
-        </div>
+        {pageElements.map((el) => (
+          <OverlayElement
+            key={el.id}
+            el={el}
+            selected={selectedId === el.id}
+            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+            onClick={handleElementClick}
+            onResizeStart={(e) => startResize(e, el.id)}
+            onChangeText={(text) => onUpdateElement(el.id, { content: text } as Partial<TextElement>)}
+          />
+        ))}
+        {draftShape && <ShapePreview shape={draftShape} />}
+        {freehandPoints && freehandPoints.length > 1 && <FreehandPreview points={freehandPoints} />}
+      </div>
 
-        <div className="existing-text-layer" style={{ width: pageSize.width, height: pageSize.height }}>
-          {editableTextItems.map((item) =>
-            editingItemId === item.id ? (
-              <div key={item.id} className="editing-wrap">
-                <div
-                  className="existing-text-editing"
-                  style={{
-                    left: item.x,
-                    top: item.y,
-                    width: editingWidth ?? item.width,
-                    minHeight: item.height,
-                    fontSize: item.fontSize,
-                    pointerEvents: "auto",
-                  }}
-                  contentEditable
-                  suppressContentEditableWarning
-                  autoFocus
-                  onFocus={(e) => selectAllText(e.currentTarget)}
-                  onKeyDown={handleExistingTextKeyDown}
-                  onBlur={(e) => handleExistingTextBlur(e, item)}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  {item.text}
-                </div>
-                <div
-                  className="edit-width-handle"
-                  style={{ left: item.x + (editingWidth ?? item.width), top: item.y + item.height / 2, pointerEvents: "auto" }}
-                  title="Drag to fit on one line, or narrower to wrap"
-                  onMouseDown={(e) => startEditWidthResize(e, editingWidth ?? item.width)}
-                />
-              </div>
-            ) : (
+      <div className="existing-text-layer" style={{ width: pageSize.width, height: pageSize.height }}>
+        {editableTextItems.map((item) =>
+          editingItemId === item.id ? (
+            <div key={item.id} className="editing-wrap">
               <div
-                key={item.id}
-                className="existing-text-hit"
+                className="existing-text-editing"
                 style={{
                   left: item.x,
                   top: item.y,
-                  width: item.width,
-                  height: item.height,
-                  pointerEvents: activeTool === "select" || MARK_TOOLS.includes(activeTool) ? "auto" : "none",
+                  width: editingWidth ?? item.width,
+                  minHeight: item.height,
+                  fontSize: item.fontSize,
+                  pointerEvents: "auto",
                 }}
-                title={activeTool === "select" ? "Click to edit this text" : "Click to mark this text"}
-                onClick={(e) => handleExistingTextClick(e, item)}
+                contentEditable
+                suppressContentEditableWarning
+                autoFocus
+                onFocus={(e) => selectAllText(e.currentTarget)}
+                onKeyDown={handleExistingTextKeyDown}
+                onBlur={(e) => handleExistingTextBlur(e, item)}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {item.text}
+              </div>
+              <div
+                className="edit-width-handle"
+                style={{ left: item.x + (editingWidth ?? item.width), top: item.y + item.height / 2, pointerEvents: "auto" }}
+                title="Drag to fit on one line, or narrower to wrap"
+                onMouseDown={(e) => startEditWidthResize(e, editingWidth ?? item.width)}
               />
-            )
-          )}
-        </div>
-
-        {highlightMatch && highlightMatch.page === pageIndex && (
-          <div
-            className="search-highlight"
-            style={{
-              left: highlightMatch.x - 2,
-              top: highlightMatch.y - 2,
-              width: highlightMatch.width + 4,
-              height: highlightMatch.height + 4,
-            }}
-          />
+            </div>
+          ) : (
+            <div
+              key={item.id}
+              className="existing-text-hit"
+              style={{
+                left: item.x,
+                top: item.y,
+                width: item.width,
+                height: item.height,
+                pointerEvents: activeTool === "select" || MARK_TOOLS.includes(activeTool) ? "auto" : "none",
+              }}
+              title={activeTool === "select" ? "Click to edit this text" : "Click to mark this text"}
+              onClick={(e) => handleExistingTextClick(e, item)}
+            />
+          )
         )}
       </div>
 
-      <div className="page-gauge" aria-hidden="true">
-        <div className="page-gauge-track">
-          <div className="page-gauge-thumb" style={{ top: `calc(${scrollRatio * 100}% - 10px)` }} />
-        </div>
-      </div>
+      {highlightMatch && highlightMatch.page === pageIndex && (
+        <div
+          className="search-highlight"
+          style={{
+            left: highlightMatch.x - 2,
+            top: highlightMatch.y - 2,
+            width: highlightMatch.width + 4,
+            height: highlightMatch.height + 4,
+          }}
+        />
+      )}
 
       <style>{`
-        .canvas-stage {
-          grid-area: canvas;
-          background: var(--bg-canvas);
-          overflow: auto;
-          display: flex;
-          justify-content: center;
-          padding: 40px 56px 40px 24px;
-          position: relative;
-        }
-        .canvas-stage.is-pannable:active {
-          cursor: grabbing;
+        .page-placeholder {
+          background: var(--bg-panel);
+          border: 1px solid var(--border);
+          border-radius: 4px;
         }
         .page-wrap {
           position: relative;
@@ -584,30 +736,6 @@ export function PdfCanvas({
           border-radius: 2px;
           cursor: ew-resize;
         }
-        .page-gauge {
-          position: fixed;
-          right: calc(var(--properties-width) + 18px);
-          top: calc(var(--header-height) + var(--tools-height) + 24px);
-          bottom: calc(var(--status-height) + 24px);
-          width: 3px;
-        }
-        .page-gauge-track {
-          position: relative;
-          height: 100%;
-          background: var(--border);
-          border-radius: 2px;
-        }
-        .page-gauge-thumb {
-          position: absolute;
-          left: -3px;
-          width: 9px;
-          height: 20px;
-          background: var(--accent-blue);
-          border-radius: 2px;
-        }
-        @media (max-width: 900px) {
-          .page-gauge { display: none; }
-        }
       `}</style>
     </div>
   );
@@ -647,6 +775,25 @@ function ShapePreview({ shape }: { shape: DraftShape }) {
   return (
     <svg style={style} width={shape.width} height={shape.height}>
       <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--accent-blue)" strokeWidth={2} strokeDasharray="4 3" />
+    </svg>
+  );
+}
+
+function FreehandPreview({ points }: { points: { x: number; y: number }[] }) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+  const pathPoints = points.map((p) => `${p.x - minX},${p.y - minY}`).join(" ");
+  return (
+    <svg
+      style={{ position: "absolute", left: minX, top: minY, width: maxX - minX || 1, height: maxY - minY || 1, pointerEvents: "none" }}
+      width={maxX - minX || 1}
+      height={maxY - minY || 1}
+    >
+      <polyline points={pathPoints} fill="none" stroke={DEFAULT_DRAW_COLOR} strokeWidth={DEFAULT_DRAW_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -760,7 +907,19 @@ function OverlayElement({
     );
   }
 
-  // erase patch
+  if (el.kind === "freehand") {
+    const pts = el.points.map((p) => `${p.x * el.width},${p.y * el.height}`).join(" ");
+    return (
+      <>
+        <svg className="element-draggable" style={baseStyle} width={el.width} height={el.height} onMouseDown={onMouseDown} onClick={onClick}>
+          <polyline points={pts} fill="none" stroke={el.strokeColor} strokeWidth={el.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={pts} fill="none" stroke="transparent" strokeWidth={Math.max(el.strokeWidth, 12)} strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {handle}
+      </>
+    );
+  }
+
   if (el.kind === "erase") {
     return (
       <>

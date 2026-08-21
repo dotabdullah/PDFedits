@@ -1,6 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
-import { PDFDocument, rgb, StandardFonts, PDFFont, degrees } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts, PDFFont, degrees, LineCapStyle } from "pdf-lib";
 import type { EditorElement, ExistingTextItem, PageSize, SearchMatch, SearchOptions } from "./types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -185,6 +185,21 @@ export async function flattenToPdf(
           font,
           color: rgb(0.1, 0.1, 0.12),
           maxWidth: 220,
+        });
+      }
+    } else if (el.kind === "freehand") {
+      // Points are normalized (0–1) relative to the element's own bbox — scale
+      // back up to px, then convert each segment to PDF points same as everything else.
+      const color = rgb(...hexToRgb(el.strokeColor));
+      for (let i = 0; i < el.points.length - 1; i++) {
+        const p1 = el.points[i];
+        const p2 = el.points[i + 1];
+        page.drawLine({
+          start: { x: toPdfX(el.x + p1.x * el.width), y: toPdfY(el.y + p1.y * el.height, 0) },
+          end: { x: toPdfX(el.x + p2.x * el.width), y: toPdfY(el.y + p2.y * el.height, 0) },
+          thickness: el.strokeWidth,
+          color,
+          lineCap: LineCapStyle.Round,
         });
       }
     }

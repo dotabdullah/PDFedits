@@ -1,6 +1,8 @@
 # PDFedits Studio — Offline PDF Editor
 
-**Current version: v0.4.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+**Current version: v0.5.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+
+**Making changes with Claude Code / Cowork?** Read [CLAUDE.md](./CLAUDE.md) first — it covers the architecture, coordinate system, and conventions this codebase relies on.
 
 Free, offline, desktop PDF editor. Tauri + React + TypeScript frontend, `pdf.js` for rendering and reading existing text, `pdf-lib` for writing edits back into the PDF, `lucide-react` for icons.
 
@@ -18,8 +20,10 @@ The goal is for **all core PDF viewing and editing to be free (Phase 1)**. A few
 | Search, next/prev navigation + counter, case-sensitive/whole-word, on-page highlight | ✅ 0.3.0 |
 | Basic document info | ✅ Shipped |
 | Page rotation (viewing) | ✅ **0.4.0** — see Page management below |
-| Continuous scrolling (currently single-page view) | 🔜 Queued, 0.4.1 — biggest architectural item on the whole list (renders every page at once instead of one at a time) |
-| Multiple PDF tabs / multiple open documents | 🔜 Queued, 0.5.0 |
+| Continuous scrolling (view-mode toggle, single-page still the default) | ✅ **0.4.1** — see "Scoping notes" below for what's intentionally simplified |
+| Multiple PDF tabs / multiple open documents | ✅ **0.5.0** — tab bar; each tab keeps independent elements, undo history, zoom, and view mode |
+
+**Scoping notes on continuous scroll:** it does not auto-update "current page" as you scroll past pages — only explicit navigation (Pages panel click, go-to-page, search jump) does. This was deliberate: tracking scroll position back into `currentPage` needs IntersectionObserver-based logic with real feedback-loop risk against the "scroll to page on navigation" behavior, for a feature whose core value (seeing many pages by scrolling) doesn't depend on that tracking. Also, Fit Page zoom mode falls back to Fit Width's math in continuous view, since "fit one page to the viewport height" doesn't have a clean meaning with several pages visible in a column at once. Full detail in the [0.4.1 changelog entry](./CHANGELOG.md).
 
 ### Editing
 | Feature | Status |
@@ -33,7 +37,7 @@ The goal is for **all core PDF viewing and editing to be free (Phase 1)**. A few
 | Object layering (bring to front / send to back) | ✅ 0.3.0 |
 | Copy / Cut / Paste / Duplicate | ✅ 0.3.0 — Ctrl+C/X/V/D |
 | Basic eraser | ✅ Shipped (visual patch only — see Known limitations) |
-| Basic freehand drawing | 🔜 Queued, 0.4.1 — path capture is a different interaction model from the click-drag shape tools |
+| Basic freehand drawing | ✅ **0.4.1** — click-drag; strokes are selectable/movable/resizable/colorable like every other element |
 
 ### Annotations
 | Feature | Status |
@@ -60,7 +64,7 @@ The goal is for **all core PDF viewing and editing to be free (Phase 1)**. A few
 | Open, Save, Save As, Export, Close | ✅ Shipped |
 | Native OS file dialogs, file-overwrite confirmation | ✅ Shipped |
 | Drag & drop | ✅ Shipped |
-| Recent documents | 🔜 Queued, 0.5.0 |
+| Recent documents | ✅ **0.5.0** — last 15, shown on the empty-state screen |
 
 ### Undo/redo & shortcuts
 | Feature | Status |
@@ -72,7 +76,7 @@ The goal is for **all core PDF viewing and editing to be free (Phase 1)**. A few
 ### Printing
 | Feature | Status |
 |---|---|
-| Print PDF via system dialog | 🔜 Queued, 0.5.0 — planned approach: export current edits to a temp PDF and hand off to the OS's default PDF viewer, so page range/copies/print dialog all come from a viewer that already does this well, rather than us reimplementing a print pipeline |
+| Print PDF via system dialog | ✅ **0.5.0** — exports current edits to a temp PDF and opens it with your OS's default PDF viewer, so page range/copies/printer selection come from a viewer that already does this well |
 
 ### Offline
 | Feature | Status |
@@ -93,11 +97,16 @@ These need either real engineering most users won't need day-to-day, or are a na
 ## What it does today
 
 - Open a PDF, view/scroll/zoom/pan pages, jump between pages via the **Pages panel** on the left (with thumbnails and page count)
+- **Multiple documents at once** via the tab bar — each tab keeps its own edits, undo history, zoom, and view mode
+- **Recent documents** — last 15, on the empty-state screen
+- **Print** — via your OS's default PDF viewer
 - **Edit existing PDF text in place** — click any text (Select tool) and retype it; drag the width handle to force one line or let it wrap; font family, bold, and italic are auto-detected from the original text and correctable in the Properties panel
 - Add new text boxes (bold/italic/underline/alignment/color), images (PNG/JPG), and hand-drawn e-signatures — click to place, drag to reposition/resize/rotate
 - **Draw shapes** — Rectangle, Ellipse, Line — click-drag to size, with stroke color/width and optional fill
 - **Annotate** — Highlight, Underline, Strikethrough: click an existing line of text to mark exactly that run, or click-drag anywhere for freeform placement. **Sticky notes** — click to place a marker, write the comment in the Properties panel (see "On sticky notes" below).
 - **Pan tool** — drag to scroll around a zoomed page
+- **Freehand drawing** — click-drag with the pencil tool; strokes select/move/resize/recolor like any other element
+- **View mode** — single-page (default) or continuous scroll (stack every page, lazily rendered as you scroll near them) — toggle in the tools bar
 - **Erase tool** — click your own added element to delete it outright; click over original PDF content to patch it with an opaque rectangle. Width/thickness adjustable while active.
 - **Find in document** — next/prev navigation, match counter, case-sensitive/whole-word options, on-page highlight
 - **Zoom** — Fit Width, Fit Page, Actual Size, or custom %
@@ -130,7 +139,7 @@ pdf-editor/
 ├── src/
 │   ├── components/
 │   │   ├── Toolbar.tsx        # HeaderBar (row 1: file actions, search, settings) + ToolsBar (row 2: tools, page nav, zoom)
-│   │   ├── PdfCanvas.tsx      # pdf.js render + overlay elements + resize handles + pan + shape drawing + existing-text edit layer
+│   │   ├── PdfCanvas.tsx      # top-level scroll container + PageBlock (canvas/overlay/interactions, reused per-page for continuous mode) + freehand capture
 │   │   ├── PagesPanel.tsx     # left Pages panel (thumbnails, add/duplicate/rotate/delete, drag-reorder, extract-select)
 │   │   ├── SidePanel.tsx      # Properties panel (doc info empty state, per-element properties incl. annotations)
 │   │   ├── StatusBar.tsx      # bottom status bar
@@ -139,7 +148,7 @@ pdf-editor/
 │   │   └── SignaturePad.tsx
 │   ├── lib/
 │   │   ├── pdfEngine.ts       # render, text/font extraction, search, flatten/export, page management (add/duplicate/insert/extract/reorder/rotate), base64 helpers
-│   │   ├── nativeIO.ts        # Tauri dialog + fs wrappers (Save vs Save As), browser-download fallback
+│   │   ├── nativeIO.ts        # Tauri dialog + fs wrappers (Save vs Save As), recent-documents storage, printing (shell open), browser-download fallback
 │   │   └── types.ts
 │   ├── styles/global.css      # light "Studio" design tokens + local @font-face rules
 │   └── App.tsx
@@ -198,11 +207,11 @@ Running via plain `npm run dev` (no Rust shell) falls back to browser download f
 - Center/right text alignment is computed against the full text string's width, not per-wrapped-line — exact for text that fits on one line, approximate once it wraps to 2+ lines
 - Sticky notes are baked-in text, not real interactive PDF comment objects — see "On sticky notes" above
 - Rotating a page remaps the *position, size, and rotation* of edits already on it, but does not re-flow or re-wrap text content to account for the new orientation — a wide text box on a page rotated to portrait will keep its original width rather than adjusting
+- Continuous scroll doesn't track which page you're currently looking at while scrolling — see "Scoping notes on continuous scroll" above
+- Freehand strokes drawn very close to a page's edge may stop capturing mid-stroke if the cursor drifts into the margin/gap between pages (in continuous mode) or outside the page boundary — this mirrors how shape-drawing has always behaved, not a new regression
 
 ## Roadmap
 
-**Next up (see feature tables above for the authoritative status):**
-- 0.4.1 — continuous scroll (single-page view is still all there is right now), freehand pencil drawing
-- 0.5.0 — multiple open documents, recent documents, printing
+**Free Phase 1 core list is now complete** — every item from the original feature request is either shipped or explicitly a Phase 2/premium candidate (see the table above). Future free-tier work will most likely be polish and gaps surfaced by real use rather than large new areas — candidates include: multi-select/copy-paste across elements at once, deeper undo history coverage (drag/resize), an error boundary around the editor, and closer OS integration for recent documents (native Jump Lists/recent-items menus instead of the current in-app list).
 
 **Not planned as free** — see the Phase 2 table above: true redaction, crop tool, original-font embedding, PDF merge/split, watermarking, password protection.

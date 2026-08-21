@@ -7,6 +7,7 @@ import {
   Redo2,
   Search,
   Settings,
+  Printer,
   MousePointer2,
   Hand,
   Type,
@@ -20,6 +21,9 @@ import {
   Underline,
   Strikethrough,
   StickyNote,
+  Pencil,
+  Rows3,
+  FileStack,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -31,7 +35,7 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
-import type { ToolId, ZoomMode } from "../lib/types";
+import type { ToolId, ViewMode, ZoomMode } from "../lib/types";
 
 interface HeaderBarProps {
   fileName: string | null;
@@ -44,6 +48,7 @@ interface HeaderBarProps {
   onSavePdf: () => void;
   onSavePdfAs: () => void;
   onSaveProject: () => void;
+  onPrint: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onToggleSearch: () => void;
@@ -61,6 +66,7 @@ export function HeaderBar({
   onSavePdf,
   onSavePdfAs,
   onSaveProject,
+  onPrint,
   onUndo,
   onRedo,
   onToggleSearch,
@@ -99,6 +105,10 @@ export function HeaderBar({
         </button>
         <button className="hbtn" onClick={onSaveProject} disabled={numPages === 0} title="Save edits + PDF as a reopenable project file">
           <Save size={15} /> Save Project
+        </button>
+        <span className="hdivider" />
+        <button className="hbtn" onClick={onPrint} disabled={numPages === 0} title="Print (opens your system's default PDF viewer)">
+          <Printer size={15} /> Print
         </button>
         <span className="hdivider" />
         <button className="hbtn icon-only" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
@@ -231,6 +241,7 @@ const TOOLS: { id: ToolId; label: string; icon: React.ReactNode }[] = [
   { id: "underline", label: "Underline mark (U) — click existing text or drag", icon: <Underline size={16} /> },
   { id: "strikethrough", label: "Strikethrough (K) — click existing text or drag", icon: <Strikethrough size={16} /> },
   { id: "note", label: "Sticky note (N)", icon: <StickyNote size={16} /> },
+  { id: "draw", label: "Freehand draw (D)", icon: <Pencil size={16} /> },
   { id: "erase", label: "Erase (E)", icon: <Eraser size={16} /> },
 ];
 
@@ -258,6 +269,8 @@ interface ToolsBarProps {
   onEraseThicknessChange: (h: number) => void;
   canReset: boolean;
   onReset: () => void;
+  viewMode: ViewMode;
+  onToggleViewMode: () => void;
 }
 
 export function ToolsBar({
@@ -284,6 +297,8 @@ export function ToolsBar({
   onEraseThicknessChange,
   canReset,
   onReset,
+  viewMode,
+  onToggleViewMode,
 }: ToolsBarProps) {
   const [pageInput, setPageInput] = useState(String(currentPage + 1));
   useEffect(() => setPageInput(String(currentPage + 1)), [currentPage]);
@@ -319,6 +334,16 @@ export function ToolsBar({
       )}
 
       <span className="tools-spacer" />
+
+      {numPages > 0 && (
+        <button
+          className={`tbtn ${viewMode === "continuous" ? "is-active" : ""}`}
+          onClick={onToggleViewMode}
+          title={viewMode === "single" ? "Switch to continuous scroll" : "Switch to single-page view"}
+        >
+          {viewMode === "single" ? <Rows3 size={16} /> : <FileStack size={16} />}
+        </button>
+      )}
 
       <button className="tbtn" onClick={onReset} disabled={!canReset} title="Reset all edits">
         <RotateCcw size={16} />
