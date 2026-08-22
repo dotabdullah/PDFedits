@@ -12,7 +12,6 @@ export default defineConfig({
       // Ignore the Tauri Rust build output (Windows locks the .exe during dev)
       ignored: ['**/src-tauri/target/**'],
     },
-    
   },
   build: {
     target: "es2021",

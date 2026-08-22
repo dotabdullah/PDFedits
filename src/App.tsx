@@ -42,7 +42,7 @@ import {
 } from "./lib/nativeIO";
 import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, SearchOptions, ToolId, ViewMode, ZoomMode } from "./lib/types";
 
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.5.1";
 const RENDER_SCALE_BASE = 1.4;
 const HISTORY_LIMIT = 50;
 

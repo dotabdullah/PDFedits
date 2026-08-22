@@ -1,6 +1,6 @@
 # PDFedits Studio — Offline PDF Editor
 
-**Current version: v0.5.0** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+**Current version: v0.5.1** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
 
 **Making changes with Claude Code / Cowork?** Read [CLAUDE.md](./CLAUDE.md) first — it covers the architecture, coordinate system, and conventions this codebase relies on.
 
@@ -143,7 +143,7 @@ pdf-editor/
 │   │   ├── PagesPanel.tsx     # left Pages panel (thumbnails, add/duplicate/rotate/delete, drag-reorder, extract-select)
 │   │   ├── SidePanel.tsx      # Properties panel (doc info empty state, per-element properties incl. annotations)
 │   │   ├── StatusBar.tsx      # bottom status bar
-│   │   ├── AboutModal.tsx     # settings/about
+│   │   ├── AboutModal.tsx     # settings/about + XpertsWP developer branding (logo, website, WhatsApp, email)
 │   │   ├── SearchPanel.tsx    # find-in-document dropdown
 │   │   └── SignaturePad.tsx
 │   ├── lib/
@@ -153,6 +153,7 @@ pdf-editor/
 │   ├── styles/global.css      # light "Studio" design tokens + local @font-face rules
 │   └── App.tsx
 ├── public/fonts/               # bundled Manrope + IBM Plex Mono (OFL-licensed) — no CDN dependency
+├── public/branding/             # developer/company logo (XpertsWP), shown in the About modal
 ├── src-tauri/
 │   ├── src/main.rs
 │   ├── Cargo.toml

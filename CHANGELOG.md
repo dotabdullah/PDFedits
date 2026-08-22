@@ -2,6 +2,16 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.5.1] — 2026-08-21
+
+Company branding in the About panel.
+
+### Added
+- About modal now shows the developer credit: **XpertsWP**, logo + clickable link to [xpertswp.com](https://xpertswp.com/)
+- WhatsApp contact link, pre-filled with "I need help about PDFedits application.." so a tap goes straight to a support conversation
+- Clickable support email (`support@xpertswp.com`, opens the user's default mail client)
+- Logo bundled locally at `public/branding/xpertswp-logo.webp` — consistent with the rest of the app's zero-CDN-dependency approach (see 0.3.1)
+
 ## [0.5.0] — 2026-08-19
 
 Multiple open documents, recent documents, and printing — the last items from the original feature request — plus a `CLAUDE.md` project guide for future agentic sessions (Claude Code/Cowork) working on this codebase.
