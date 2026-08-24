@@ -2,6 +2,18 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.5.2] — 2026-08-22
+
+Fixes Save, Save As, and Print appearing to do nothing when clicked.
+
+### Fixed
+- **Save / Save As / Print silently failing.** Root cause was two-fold:
+  1. In all three handlers, the step that actually builds the exported PDF bytes was called *outside* its try/catch block. If that step threw for any reason, the error was silently swallowed — no dialog, no console-visible feedback from the user's perspective, the button just appeared dead. All three (plus PNG/JPG export, which had the same pattern) now wrap the entire operation in a single try/catch, so any failure now shows an actual error message instead of doing nothing.
+  2. The thing actually throwing: any text containing characters outside WinAnsi encoding — Arabic/Urdu script, most emoji, several typographic symbols — crashes `pdf-lib`'s standard-font text drawing outright. This is a near-certain real-world case, not an edge case, for anyone typing non-Latin text into a text box or note. Export now substitutes unsupported characters with `?` instead of failing the whole export, and shows a clear one-time note afterward telling you that happened (rather than silently mangling your text with no explanation). Verified with a live Node.js reproduction of the exact failure before and after the fix — the "before" case reliably threw `WinAnsi cannot encode "ا" (0x0627)`.
+
+### Known limitation (unchanged, now surfaced honestly instead of crashing)
+Non-Latin scripts (Arabic, Urdu, and similar) still aren't genuinely supported in exported PDF text — proper rendering needs both a font with those glyphs *and* right-to-left text shaping (correctly joining/reordering letters), which `pdf-lib`'s basic text drawing doesn't do. Full support is a real feature, not a quick fix; this release stops it from crashing the export and makes the limitation visible instead of silent. See the README's new "On non-Latin text" note.
+
 ## [0.5.1] — 2026-08-21
 
 Company branding in the About panel.

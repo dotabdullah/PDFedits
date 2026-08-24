@@ -1,6 +1,6 @@
 # PDFedits Studio — Offline PDF Editor
 
-**Current version: v0.5.1** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
+**Current version: v0.5.2** — see [CHANGELOG.md](./CHANGELOG.md) for full release history. This README and the changelog are updated with every release.
 
 **Making changes with Claude Code / Cowork?** Read [CLAUDE.md](./CLAUDE.md) first — it covers the architecture, coordinate system, and conventions this codebase relies on.
 
@@ -199,6 +199,7 @@ Running via plain `npm run dev` (no Rust shell) falls back to browser download f
 
 ## Known limitations (Phase 1, by design)
 
+- **On non-Latin text:** exported PDF text uses the 12 standard PDF fonts, which only support WinAnsi encoding (~Latin-1). Arabic, Urdu, and similar scripts, most emoji, and some symbols aren't in that set. As of 0.5.2, typing these no longer crashes Save/Save As/Print — unsupported characters are substituted with `?` and you're told this happened — but they still won't render correctly. Real support needs both a font with those glyphs and right-to-left text shaping (correctly joining/reordering letters), which is a genuine feature, not a quick fix.
 - The erase tool is **visual only** — it draws an opaque patch over content, it does not remove the underlying text from the PDF's internal structure, so the original text is technically still extractable by someone who goes looking. True redaction is a premium-candidate item; don't rely on erase for legally sensitive redaction (SSNs, medical records, etc.) yet.
 - Dragging/resizing an element isn't tracked in undo history (only add/delete/text-edit are)
 - Replacement text for edited existing text uses the 12 standard PDF fonts, not the document's original embedded font (see "On font matching" above)

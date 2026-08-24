@@ -50,10 +50,11 @@ export async function flattenToPdf(
   originalBytes: Uint8Array,
   elements: EditorElement[],
   renderScale: number
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; hadUnsupportedChars: boolean }> {
   const pdfDoc = await PDFDocument.load(originalBytes);
   const pages = pdfDoc.getPages();
   const fontCache = new Map<string, PDFFont>();
+  let hadUnsupportedChars = false;
 
   const getFont = async (family: "sans" | "serif" | "mono", bold: boolean, italic: boolean) => {
     const variant = FONT_VARIANTS[family] ?? FONT_VARIANTS.sans;
@@ -63,6 +64,31 @@ export async function flattenToPdf(
     }
     return fontCache.get(key)!;
   };
+
+  // The 12 standard PDF fonts only support WinAnsi (~Latin-1) — anything outside
+  // that (Arabic/Urdu script, most emoji, many symbols) throws if drawn as-is.
+  // Substituting "?" per unsupported character means a save/print never hard-fails
+  // just because of one character — see README's "On non-Latin text" note.
+  function sanitizeForFont(font: PDFFont, text: string): string {
+    let sanitized = text;
+    try {
+      font.widthOfTextAtSize(text, 10);
+      return text; // fast path: whole string is fine, skip the per-character loop
+    } catch {
+      sanitized = Array.from(text)
+        .map((ch) => {
+          try {
+            font.widthOfTextAtSize(ch, 10);
+            return ch;
+          } catch {
+            hadUnsupportedChars = true;
+            return "?";
+          }
+        })
+        .join("");
+      return sanitized;
+    }
+  }
 
   for (const el of elements) {
     const page = pages[el.page];
@@ -83,13 +109,14 @@ export async function flattenToPdf(
       });
     } else if (el.kind === "text") {
       const font = await getFont(el.fontFamily, !!el.bold, !!el.italic);
+      const safeContent = sanitizeForFont(font, el.content);
       const fontSize = el.fontSize / renderScale;
-      const textWidth = font.widthOfTextAtSize(el.content, fontSize);
+      const textWidth = font.widthOfTextAtSize(safeContent, fontSize);
       const boxWidth = el.width / renderScale;
       const alignOffset = el.align === "center" ? (boxWidth - textWidth) / 2 : el.align === "right" ? boxWidth - textWidth : 0;
       const textX = toPdfX(el.x) + Math.max(0, alignOffset);
       const textY = toPdfY(el.y, el.fontSize) + el.fontSize * 0.15;
-      page.drawText(el.content, {
+      page.drawText(safeContent, {
         x: textX,
         y: textY,
         size: fontSize,
@@ -177,8 +204,9 @@ export async function flattenToPdf(
       });
       if (el.content.trim()) {
         const font = await getFont("sans", false, false);
+        const safeContent = sanitizeForFont(font, el.content);
         const noteFontSize = 8;
-        page.drawText(el.content, {
+        page.drawText(safeContent, {
           x: toPdfX(el.x) + markerSize / renderScale + 4,
           y: toPdfY(el.y, markerSize / 2) - noteFontSize / 3,
           size: noteFontSize,
@@ -205,7 +233,7 @@ export async function flattenToPdf(
     }
   }
 
-  return pdfDoc.save();
+  return { bytes: await pdfDoc.save(), hadUnsupportedChars };
 }
 
 /**

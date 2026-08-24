@@ -42,7 +42,7 @@ import {
 } from "./lib/nativeIO";
 import type { EditorElement, ExistingTextItem, ProjectFile, SearchMatch, SearchOptions, ToolId, ViewMode, ZoomMode } from "./lib/types";
 
-const APP_VERSION = "0.5.1";
+const APP_VERSION = "0.5.2";
 const RENDER_SCALE_BASE = 1.4;
 const HISTORY_LIMIT = 50;
 
@@ -600,17 +600,26 @@ export default function App() {
     }
   }
 
-  async function buildEditedPdfBytes(): Promise<Uint8Array | null> {
+  async function buildEditedPdfBytes(): Promise<{ bytes: Uint8Array; hadUnsupportedChars: boolean } | null> {
     if (!pdfBytes) return null;
     return flattenToPdf(pdfBytes, elements, renderScale);
   }
 
+  function warnIfUnsupportedChars(hadUnsupportedChars: boolean) {
+    if (hadUnsupportedChars) {
+      window.alert(
+        "Saved — but some characters (e.g. Arabic/Urdu script, emoji, or certain symbols) aren't supported by the current export and were shown as \"?\" instead. See the README's \"On non-Latin text\" note for why."
+      );
+    }
+  }
+
   async function handleSavePdf() {
-    const outBytes = await buildEditedPdfBytes();
-    if (!outBytes) return;
     try {
+      const result = await buildEditedPdfBytes();
+      if (!result) return;
       if (savedPdfPath) {
-        await writeBinaryToPath(savedPdfPath, outBytes);
+        await writeBinaryToPath(savedPdfPath, result.bytes);
+        warnIfUnsupportedChars(result.hadUnsupportedChars);
         return;
       }
       await handleSavePdfAs();
@@ -620,12 +629,15 @@ export default function App() {
   }
 
   async function handleSavePdfAs() {
-    const outBytes = await buildEditedPdfBytes();
-    if (!outBytes) return;
-    const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
     try {
-      const path = await saveBinaryFileAs(outBytes, `${baseName}-edited.pdf`, [{ name: "PDF", extensions: ["pdf"] }]);
-      if (path) setSavedPdfPath(path);
+      const result = await buildEditedPdfBytes();
+      if (!result) return;
+      const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
+      const path = await saveBinaryFileAs(result.bytes, `${baseName}-edited.pdf`, [{ name: "PDF", extensions: ["pdf"] }]);
+      if (path) {
+        setSavedPdfPath(path);
+        warnIfUnsupportedChars(result.hadUnsupportedChars);
+      }
     } catch (err) {
       window.alert(`Couldn't save the PDF.\n\n${errorMessage(err)}`);
     }
@@ -633,95 +645,95 @@ export default function App() {
 
   async function handleExportImage(format: "png" | "jpg") {
     if (!pdfBytes) return;
-    const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
-
-    // Continuous mode can have multiple .pdf-canvas elements at once — target the current page specifically.
-    const canvas = document.querySelector(`.pdf-canvas[data-page-index="${currentPage}"]`) as HTMLCanvasElement | null;
-    if (!canvas) return;
-    const composite = document.createElement("canvas");
-    composite.width = canvas.width;
-    composite.height = canvas.height;
-    const ctx = composite.getContext("2d")!;
-    ctx.drawImage(canvas, 0, 0);
-    for (const el of elements.filter((e) => e.page === currentPage)) {
-      if (el.kind === "erase") {
-        ctx.fillStyle = el.color;
-        ctx.fillRect(el.x, el.y, el.width, el.height);
-      } else if (el.kind === "text") {
-        ctx.fillStyle = el.color;
-        const weight = el.bold ? "bold " : "";
-        const style = el.italic ? "italic " : "";
-        ctx.font = `${style}${weight}${el.fontSize}px sans-serif`;
-        ctx.fillText(el.content, el.x, el.y + el.fontSize);
-      } else if (el.kind === "image" || el.kind === "signature") {
-        const img = new Image();
-        img.src = el.dataUrl;
-        await new Promise((r) => (img.onload = r));
-        ctx.drawImage(img, el.x, el.y, el.width, el.height);
-      } else if (el.kind === "rectangle" || el.kind === "ellipse") {
-        ctx.lineWidth = el.strokeWidth;
-        ctx.strokeStyle = el.strokeColor;
-        if (el.fillColor) ctx.fillStyle = el.fillColor;
-        ctx.beginPath();
-        if (el.kind === "ellipse") {
-          ctx.ellipse(el.x + el.width / 2, el.y + el.height / 2, el.width / 2, el.height / 2, 0, 0, Math.PI * 2);
-        } else {
-          ctx.rect(el.x, el.y, el.width, el.height);
-        }
-        if (el.fillColor) ctx.fill();
-        ctx.stroke();
-      } else if (el.kind === "line") {
-        ctx.lineWidth = el.strokeWidth;
-        ctx.strokeStyle = el.strokeColor;
-        ctx.beginPath();
-        if (el.descending) {
-          ctx.moveTo(el.x, el.y);
-          ctx.lineTo(el.x + el.width, el.y + el.height);
-        } else {
-          ctx.moveTo(el.x, el.y + el.height);
-          ctx.lineTo(el.x + el.width, el.y);
-        }
-        ctx.stroke();
-      } else if (el.kind === "highlight") {
-        ctx.globalAlpha = 0.4;
-        ctx.fillStyle = el.color;
-        ctx.fillRect(el.x, el.y, el.width, el.height);
-        ctx.globalAlpha = 1;
-      } else if (el.kind === "textmark") {
-        ctx.lineWidth = el.strokeWidth;
-        ctx.strokeStyle = el.color;
-        const markY = el.style === "underline" ? el.y + el.height * 0.92 : el.y + el.height * 0.5;
-        ctx.beginPath();
-        ctx.moveTo(el.x, markY);
-        ctx.lineTo(el.x + el.width, markY);
-        ctx.stroke();
-      } else if (el.kind === "note") {
-        const markerSize = Math.min(el.width, el.height);
-        ctx.fillStyle = el.color;
-        ctx.fillRect(el.x, el.y, markerSize, markerSize);
-        if (el.content.trim()) {
-          ctx.fillStyle = "#1a1a1f";
-          ctx.font = "11px sans-serif";
-          ctx.fillText(el.content, el.x + markerSize + 4, el.y + markerSize / 2 + 4, 220);
-        }
-      } else if (el.kind === "freehand") {
-        ctx.strokeStyle = el.strokeColor;
-        ctx.lineWidth = el.strokeWidth;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.beginPath();
-        el.points.forEach((p, i) => {
-          const px = el.x + p.x * el.width;
-          const py = el.y + p.y * el.height;
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        });
-        ctx.stroke();
-      }
-    }
-    const blob = await canvasToImageBytes(composite, format);
-    const bytes = new Uint8Array(await blob.arrayBuffer());
     try {
+      const baseName = (fileName ?? "document.pdf").replace(/\.pdf$/i, "");
+
+      // Continuous mode can have multiple .pdf-canvas elements at once — target the current page specifically.
+      const canvas = document.querySelector(`.pdf-canvas[data-page-index="${currentPage}"]`) as HTMLCanvasElement | null;
+      if (!canvas) return;
+      const composite = document.createElement("canvas");
+      composite.width = canvas.width;
+      composite.height = canvas.height;
+      const ctx = composite.getContext("2d")!;
+      ctx.drawImage(canvas, 0, 0);
+      for (const el of elements.filter((e) => e.page === currentPage)) {
+        if (el.kind === "erase") {
+          ctx.fillStyle = el.color;
+          ctx.fillRect(el.x, el.y, el.width, el.height);
+        } else if (el.kind === "text") {
+          ctx.fillStyle = el.color;
+          const weight = el.bold ? "bold " : "";
+          const style = el.italic ? "italic " : "";
+          ctx.font = `${style}${weight}${el.fontSize}px sans-serif`;
+          ctx.fillText(el.content, el.x, el.y + el.fontSize);
+        } else if (el.kind === "image" || el.kind === "signature") {
+          const img = new Image();
+          img.src = el.dataUrl;
+          await new Promise((r) => (img.onload = r));
+          ctx.drawImage(img, el.x, el.y, el.width, el.height);
+        } else if (el.kind === "rectangle" || el.kind === "ellipse") {
+          ctx.lineWidth = el.strokeWidth;
+          ctx.strokeStyle = el.strokeColor;
+          if (el.fillColor) ctx.fillStyle = el.fillColor;
+          ctx.beginPath();
+          if (el.kind === "ellipse") {
+            ctx.ellipse(el.x + el.width / 2, el.y + el.height / 2, el.width / 2, el.height / 2, 0, 0, Math.PI * 2);
+          } else {
+            ctx.rect(el.x, el.y, el.width, el.height);
+          }
+          if (el.fillColor) ctx.fill();
+          ctx.stroke();
+        } else if (el.kind === "line") {
+          ctx.lineWidth = el.strokeWidth;
+          ctx.strokeStyle = el.strokeColor;
+          ctx.beginPath();
+          if (el.descending) {
+            ctx.moveTo(el.x, el.y);
+            ctx.lineTo(el.x + el.width, el.y + el.height);
+          } else {
+            ctx.moveTo(el.x, el.y + el.height);
+            ctx.lineTo(el.x + el.width, el.y);
+          }
+          ctx.stroke();
+        } else if (el.kind === "highlight") {
+          ctx.globalAlpha = 0.4;
+          ctx.fillStyle = el.color;
+          ctx.fillRect(el.x, el.y, el.width, el.height);
+          ctx.globalAlpha = 1;
+        } else if (el.kind === "textmark") {
+          ctx.lineWidth = el.strokeWidth;
+          ctx.strokeStyle = el.color;
+          const markY = el.style === "underline" ? el.y + el.height * 0.92 : el.y + el.height * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(el.x, markY);
+          ctx.lineTo(el.x + el.width, markY);
+          ctx.stroke();
+        } else if (el.kind === "note") {
+          const markerSize = Math.min(el.width, el.height);
+          ctx.fillStyle = el.color;
+          ctx.fillRect(el.x, el.y, markerSize, markerSize);
+          if (el.content.trim()) {
+            ctx.fillStyle = "#1a1a1f";
+            ctx.font = "11px sans-serif";
+            ctx.fillText(el.content, el.x + markerSize + 4, el.y + markerSize / 2 + 4, 220);
+          }
+        } else if (el.kind === "freehand") {
+          ctx.strokeStyle = el.strokeColor;
+          ctx.lineWidth = el.strokeWidth;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          el.points.forEach((p, i) => {
+            const px = el.x + p.x * el.width;
+            const py = el.y + p.y * el.height;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+        }
+      }
+      const blob = await canvasToImageBytes(composite, format);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
       await saveBinaryFileAs(bytes, `${baseName}-page${currentPage + 1}.${format}`, [
         { name: format.toUpperCase(), extensions: [format] },
       ]);
@@ -835,15 +847,17 @@ export default function App() {
   }
 
   async function handlePrint() {
-    const outBytes = await buildEditedPdfBytes();
-    if (!outBytes) return;
     try {
-      const ok = await printPdfBytes(outBytes, fileName ?? "document.pdf");
+      const result = await buildEditedPdfBytes();
+      if (!result) return;
+      const ok = await printPdfBytes(result.bytes, fileName ?? "document.pdf");
       if (!ok) {
         window.alert("Printing needs the desktop app — use Save PDF and print from your PDF viewer instead.");
+      } else {
+        warnIfUnsupportedChars(result.hadUnsupportedChars);
       }
     } catch (err) {
-      window.alert(`Couldn't open the system print dialog.\n\n${errorMessage(err)}`);
+      window.alert(`Couldn't print this PDF.\n\n${errorMessage(err)}`);
     }
   }
 
