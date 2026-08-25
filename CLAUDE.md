@@ -6,7 +6,7 @@ Guidance for Claude (via Claude Code, Cowork, or any other agentic session) work
 
 **PDFedits Studio** — a free, offline, desktop PDF editor. Tauri v2 (Rust shell) + React + TypeScript frontend. `pdf.js` renders pages and reads existing text; `pdf-lib` writes edits back into the PDF at export time. No backend, no accounts, no network calls except font/dependency installs during development.
 
-Current version and full feature status: see [README.md](./README.md) (feature status tables) and [CHANGELOG.md](./CHANGELOG.md) (release history). **Always check the README's feature table before assuming something is or isn't built** — it's kept accurate every release.
+Current version and full feature status: see [FEATURES.md](./FEATURES.md) (feature status tables) and [CHANGELOG.md](./CHANGELOG.md) (release history). README.md is a lean, consumer-facing page (download links, badges, highlights) — **always check FEATURES.md's tables before assuming something is or isn't built**, it's kept accurate every release. README.md and CLAUDE.md's dev setup section replace what used to be a "Setup" section directly in the README.
 
 ## Core architectural decision: overlay-based editing, not content-stream editing
 
@@ -85,7 +85,7 @@ src-tauri/
 
 **Verify pdf-lib API assumptions before shipping.** Several past changes were verified by writing a throwaway Node.js script that actually calls the `pdf-lib` API against a real in-memory PDF, rather than trusting type definitions or reasoning alone (e.g. the page-rotation coordinate remap in 0.4.0, the page-duplication-within-same-document pattern, freehand normalization edge cases in 0.4.1). Do this for anything touching `pdf-lib`'s lower-level APIs or any new geometry math — it's cheap and has caught real issues.
 
-**Every release gets a CHANGELOG.md entry and a README.md update**, including version bumps in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the `APP_VERSION` constant in `App.tsx` (shown in the About modal). Keep the README's feature-status tables accurate — that's the authoritative source of truth for what's built vs. queued, not a marketing feature list. If something is deliberately simplified or has a known gap, say so explicitly in both the CHANGELOG entry and the relevant README section — this project's documentation style favors "here's exactly what's true and why" over vague feature claims.
+**Every release gets a CHANGELOG.md entry**, including version bumps in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the `APP_VERSION` constant in `App.tsx` (shown in the About modal). Keep FEATURES.md's feature-status tables accurate — that's the authoritative source of truth for what's built vs. queued, not a marketing feature list; README.md only needs updating for its own highlights/badges when something release-worthy changes. If something is deliberately simplified or has a known gap, say so explicitly in both the CHANGELOG entry and FEATURES.md — this project's documentation style favors "here's exactly what's true and why" over vague feature claims.
 
 ## Build/verify commands
 

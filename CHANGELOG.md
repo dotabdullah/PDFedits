@@ -2,6 +2,18 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.5.3] — 2026-08-25
+
+Documentation reorganization — no code changes.
+
+### Changed
+- **README.md rewritten** as a lean, consumer-facing page: badges (version, platform, price, offline, downloads), download links, a short feature highlight list, and a minimal CTA at the end. No more setup instructions in the README — the app ships as prebuilt installers via GitHub Releases, so build-from-source steps belong in CLAUDE.md (for contributors) rather than the main README (for end users).
+- **New FEATURES.md** — holds everything the README used to carry: the detailed Phase 1/2 feature-status tables, "On font matching"/"On non-Latin text" explanations, known limitations, and the roadmap. This remains the authoritative source of truth for what's built vs. queued; CLAUDE.md's guidance on keeping documentation accurate now points here instead of README.md.
+- CLAUDE.md updated to reflect the new file split.
+
+### Note on badges
+The GitHub-hosted badges (release version, downloads) use a placeholder repo path (`xpertswp/pdfedits-studio`) since the actual repository URL wasn't available when this was written — update the badge URLs in README.md if the real path differs. No LICENSE file exists yet either; the README states "Free to use — © XpertsWP" rather than asserting specific open-source license terms that haven't been decided.
+
 ## [0.5.2] — 2026-08-22
 
 Fixes Save, Save As, and Print appearing to do nothing when clicked.
