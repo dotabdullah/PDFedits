@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=""src-tauri/icons/icon.png"" alt="XpertsWP" width="72" />
+<img src="src-tauri/icons/icon.png" alt="XpertsWP" width="72" />
 
 # PDFedits Studio
 
