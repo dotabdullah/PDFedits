@@ -12,7 +12,14 @@ const FONT_VARIANTS: Record<"sans" | "serif" | "mono", { normal: keyof typeof St
 };
 
 export async function loadPdfDocument(bytes: Uint8Array) {
-  const loadingTask = pdfjsLib.getDocument({ data: bytes });
+  // pdf.js transfers the underlying ArrayBuffer to its worker for performance
+  // (see its GetDocRequest postMessage call), which DETACHES the buffer in this
+  // thread — any Uint8Array sharing that buffer becomes unusable afterward. We
+  // keep `bytes` around in App state for later pdf-lib operations (Save, Print,
+  // page management), so pdf.js must only ever see a throwaway copy, never the
+  // original. This was the root cause of "No PDF header found" errors on every
+  // action that reused the app's stored PDF bytes after the first render.
+  const loadingTask = pdfjsLib.getDocument({ data: bytes.slice() });
   return loadingTask.promise;
 }
 

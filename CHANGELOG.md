@@ -2,6 +2,18 @@
 
 All notable changes to PDFedits are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) — during v1, expect `0.1.x` patch releases for fixes and small additions, with `0.x.0` reserved for larger feature drops.
 
+## [0.5.4] — 2026-08-26
+
+Critical fix: Save, Save As, Print, Add Page, and Insert PDF were all broken, throwing "No PDF header found" or "pdfBase64 is missing" errors.
+
+### Fixed
+- **Root cause: `pdf.js` was silently corrupting the app's own copy of the PDF's bytes.** `loadPdfDocument()` (used every time a PDF is opened, a tab is switched to, or a page-management operation reloads the document) handed the app's `Uint8Array` directly to `pdfjsLib.getDocument()`. pdf.js transfers that array's underlying buffer to its rendering worker for performance — confirmed directly in its source (`sendWithPromise("GetDocRequest", docParams, [data.buffer])`) — which **detaches** the buffer in the main thread. Since the app kept that exact same object in state (`pdfBytes`) and reused it for every later Save/Print/page-management action, the very first render of any document silently zeroed out the bytes needed for everything after it. `pdf-lib` then failed to find a PDF header because, by the time it looked, there was nothing there.
+- This explains every symptom reported together: Save/Save As/Print (`flattenToPdf` re-parses `pdfBytes`), Add Page and Insert PDF (`addBlankPageToPdf`/`insertPdfPages` re-parse `pdfBytes`), and the "Open project" failure — a project saved *after* the corruption had already happened would embed an empty/broken `pdfBase64`, so reopening it correctly reported the field as missing. All five were one bug, not five.
+- **Fix:** `loadPdfDocument()` now hands pdf.js a disposable copy (`bytes.slice()`) instead of the original array, so the app's stored copy is never touched by pdf.js's worker transfer. This is the single, sole place `getDocument()` is called from — one fix covers every affected code path.
+
+### If you saved a project file while on an affected version
+Any `.pdfedits` file saved between 0.5.0 and 0.5.3 may have an empty/corrupted embedded PDF and will fail to reopen with "pdfBase64 is missing." There's no way to recover the PDF from an already-corrupted project file — reopen the *original* PDF and redo the edits, then re-save the project on 0.5.4 or later.
+
 ## [0.5.3] — 2026-08-25
 
 Documentation reorganization — no code changes.

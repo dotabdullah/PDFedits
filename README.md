@@ -7,7 +7,7 @@
 **Free, offline, desktop PDF editor.**
 Edit text, images, signatures, shapes, and annotations directly on your PDF — no account, no cloud upload, no subscription.
 
-[![Version](https://img.shields.io/badge/version-0.5.2-2F6FED?style=flat-square)](https://github.com/xpertswp/pdfedits-studio/releases/latest)
+[![Version](https://img.shields.io/badge/version-0.5.4-2F6FED?style=flat-square)](https://github.com/xpertswp/pdfedits-studio/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2F6FED?style=flat-square)](https://github.com/xpertswp/pdfedits-studio/releases/latest)
 [![Price](https://img.shields.io/badge/price-Free-2F6FED?style=flat-square)](#-free-vs-premium)
 [![Offline](https://img.shields.io/badge/offline-100%25-2F6FED?style=flat-square)](#-free-vs-premium)
