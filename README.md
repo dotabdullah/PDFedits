@@ -52,7 +52,7 @@ Building from source or contributing? See **[CLAUDE.md](./CLAUDE.md)** for archi
 
 | | |
 |---|---|
-| 🐛 Issues & feature requests | [GitHub Issues](https://github.com/xpertswp/pdfedits-studio/issues) |
+| 🐛 Issues & feature requests | [GitHub Issues](https://github.com/dotabdullah/PDFedits/issues) |
 | 💬 WhatsApp | [+92 311 1765486](https://wa.me/923111765486?text=I%20need%20help%20about%20PDFedits%20application..) |
 | 📧 Email | [support@xpertswp.com](mailto:support@xpertswp.com) |
 | 🌐 Developer | [XpertsWP](https://xpertswp.com/) |
@@ -67,6 +67,6 @@ Free to use. © XpertsWP.
 
 ### Found this useful?
 
-**[⬇ Download PDFedits Studio](https://github.com/xpertswp/pdfedits-studio/releases/latest)** · **[⭐ Star this repo](https://github.com/xpertswp/pdfedits-studio)**
+**[⬇ Download PDFedits Studio](https://github.com/dotabdullah/PDFedits/releases/latest)** · **[⭐ Star this repo](https://github.com/dotabdullah/PDFedits)**
 
 </div>
