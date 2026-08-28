@@ -95,6 +95,14 @@ h1 em, h2 em { color: var(--blue); font-family: "Playfair Display", Georgia, ser
   .industry-card { min-height: 242px; }
 }
 
+/* Decorative elements must never create a horizontal scroll area. The hero stays clean at every size. */
+html, body { overflow-x: clip; }
+.page-glow { display: none; }
+
+/* The orbit is a desktop accent only; on tablet and mobile it competes with the product preview. */
+.stage-orbit { display: none; }
+@media (min-width: 901px) { .stage-orbit { display: block; } }
+
 @media (max-width: 650px) {
   body { overflow-x: clip; }
   .hero { padding-top: 38px; }
